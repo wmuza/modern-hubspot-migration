@@ -408,19 +408,25 @@ class SelectiveSyncManager:
         print(f"✅ Found {len(related_companies)} related companies")
         self.sync_metadata['related_objects']['companies'] = company_ids
         
-        # Step 4: Migrate contacts
+        # Step 4: Migrate companies first (so they exist for associations)
+        print("\n🏢 Migrating related companies...")
+        companies_migrated = 0
+        if related_companies:
+            companies_migrated = self._migrate_specific_companies(related_companies)
+        
+        # Step 5: Migrate contacts
         print("\n👥 Migrating target contacts...")
         contacts_migrated = 0
         if target_contacts:
             contacts_migrated = self._migrate_specific_contacts(target_contacts)
         
-        # Step 5: Migrate related deals  
+        # Step 6: Migrate related deals  
         print("💼 Migrating related deals...")
         deals_migrated = 0
         if related_deals:
             deals_migrated = self._migrate_specific_deals(related_deals)
         
-        # Step 6: Create associations
+        # Step 7: Create associations
         print("🔗 Creating associations...")
         associations_created = 0
         
@@ -435,7 +441,7 @@ class SelectiveSyncManager:
         results = {
             'contacts_synced': contacts_migrated,
             'deals_synced': deals_migrated,
-            'companies_synced': len(related_companies),
+            'companies_synced': companies_migrated,
             'associations_created': associations_created,
             'sync_metadata': self.sync_metadata
         }
@@ -594,6 +600,128 @@ class SelectiveSyncManager:
             print(f"  ❌ Contact migration failed: {str(e)}")
             
         return migrated_count
+    
+    def _migrate_specific_companies(self, companies: List[Dict]) -> int:
+        """Migrate specific companies to sandbox"""
+        print(f"  🏢 Migrating {len(companies)} companies...")
+        
+        migrated_count = 0
+        headers = get_api_headers(self.sandbox_token)
+        
+        try:
+            for i, company in enumerate(companies, 1):
+                company_props = company.get('properties', {})
+                domain = (company_props.get('domain') or '').strip()
+                name = (company_props.get('name') or '').strip()
+                
+                print(f"    🏢 {name or 'Unnamed Company'} ({domain or 'no domain'})")
+                
+                # Check if company already exists in sandbox
+                existing_company_id = None
+                if domain:
+                    existing_company_id = self._find_company_by_domain(domain)
+                elif name:
+                    existing_company_id = self._find_company_by_name(name)
+                
+                if existing_company_id:
+                    print(f"      🔄 Company already exists (ID: {existing_company_id})")
+                    migrated_count += 1
+                else:
+                    # Create new company
+                    success, new_company_id = self._create_company_in_sandbox(company)
+                    if success:
+                        print(f"      ✅ Created new company (ID: {new_company_id})")
+                        migrated_count += 1
+                    else:
+                        print(f"      ❌ Failed to create company: {new_company_id}")
+                
+                time.sleep(0.2)  # Rate limiting
+            
+            print(f"  ✅ Successfully migrated {migrated_count}/{len(companies)} companies")
+            
+        except Exception as e:
+            print(f"  ❌ Company migration failed: {str(e)}")
+            
+        return migrated_count
+    
+    def _find_company_by_domain(self, domain: str) -> Optional[str]:
+        """Find a company in sandbox by domain"""
+        headers = get_api_headers(self.sandbox_token)
+        search_url = 'https://api.hubapi.com/crm/v3/objects/companies/search'
+        
+        search_payload = {
+            'filterGroups': [{
+                'filters': [{
+                    'propertyName': 'domain',
+                    'operator': 'EQ',
+                    'value': domain
+                }]
+            }],
+            'properties': ['domain', 'name'],
+            'limit': 1
+        }
+        
+        success, search_data = make_hubspot_request('POST', search_url, headers, json_data=search_payload)
+        
+        if success:
+            results = search_data.get('results', [])
+            return results[0]['id'] if results else None
+        
+        return None
+    
+    def _find_company_by_name(self, name: str) -> Optional[str]:
+        """Find a company in sandbox by name"""
+        headers = get_api_headers(self.sandbox_token)
+        search_url = 'https://api.hubapi.com/crm/v3/objects/companies/search'
+        
+        search_payload = {
+            'filterGroups': [{
+                'filters': [{
+                    'propertyName': 'name',
+                    'operator': 'EQ',
+                    'value': name
+                }]
+            }],
+            'properties': ['domain', 'name'],
+            'limit': 1
+        }
+        
+        success, search_data = make_hubspot_request('POST', search_url, headers, json_data=search_payload)
+        
+        if success:
+            results = search_data.get('results', [])
+            return results[0]['id'] if results else None
+        
+        return None
+    
+    def _create_company_in_sandbox(self, company: Dict[str, Any]) -> tuple[bool, str]:
+        """Create a new company in sandbox"""
+        headers = get_api_headers(self.sandbox_token)
+        url = 'https://api.hubapi.com/crm/v3/objects/companies'
+        
+        # Filter properties to only include safe ones
+        company_props = company.get('properties', {})
+        
+        # Common company properties that are usually safe
+        safe_company_props = {}
+        safe_fields = ['name', 'domain', 'city', 'state', 'country', 'industry', 'phone', 'website']
+        
+        for field in safe_fields:
+            if field in company_props and company_props[field]:
+                safe_company_props[field] = company_props[field]
+        
+        if not safe_company_props:
+            return False, "No safe properties to migrate"
+        
+        payload = {'properties': safe_company_props}
+        
+        success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+        
+        if success:
+            return True, data.get('id', 'unknown')
+        else:
+            error_msg = data.get('error', str(data)) if isinstance(data, dict) else str(data)
+            return False, error_msg
     
     def _migrate_specific_deals(self, deals: List[Dict]) -> int:
         """Migrate specific deals to sandbox"""
