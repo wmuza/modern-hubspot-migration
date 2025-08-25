@@ -52,13 +52,13 @@ def test_basic_functionality():
     print("=" * 80)
     
     # Test help
-    run_command("python3 migrate.py --help", "Help documentation")
+    run_command("python3 ../migrate.py --help", "Help documentation")
     
-    # Test dry run
-    run_command("python3 migrate.py --dry-run --limit 5", "Dry run with small limit")
+    # Test dry run (adjust path since we're now in tests/)
+    run_command("python3 ../migrate.py --dry-run --limit 5", "Dry run with small limit")
     
     # Test deals-only dry run
-    run_command("python3 migrate.py --dry-run --deals-only", "Deals-only dry run")
+    run_command("python3 ../migrate.py --dry-run --deals-only", "Deals-only dry run")
 
 def test_rollback_features():
     """Test rollback and reset functionality"""
@@ -67,7 +67,7 @@ def test_rollback_features():
     print("=" * 80)
     
     # Test rollback options display
-    run_command("python3 migrate.py --show-rollback-options", "Show rollback options")
+    run_command("python3 ../migrate.py --show-rollback-options", "Show rollback options")
     
     # Note: We won't actually run destructive rollback commands in tests
 
@@ -78,11 +78,11 @@ def test_selective_sync():
     print("=" * 80)
     
     # Test selective contacts (dry run equivalent)
-    run_command("python3 migrate.py --selective-contacts --days-since-created 30", 
+    run_command("python3 ../migrate.py --selective-contacts --days-since-created 30", 
                 "Selective contacts sync")
     
     # Test selective deals
-    run_command("python3 migrate.py --selective-deals --days-since-created 7",
+    run_command("python3 ../migrate.py --selective-deals --days-since-created 7",
                 "Selective deals sync")
 
 def test_error_handling():
@@ -92,15 +92,15 @@ def test_error_handling():
     print("=" * 80)
     
     # Test invalid combinations
-    run_command("python3 migrate.py --contacts-only --deals-only",
+    run_command("python3 ../migrate.py --contacts-only --deals-only",
                 "Invalid argument combination")
     
     # Test missing config (if we rename it temporarily)
-    if os.path.exists("config/config.ini"):
-        os.rename("config/config.ini", "config/config.ini.bak")
-        run_command("python3 migrate.py --dry-run",
+    if os.path.exists("../config/config.ini"):
+        os.rename("../config/config.ini", "../config/config.ini.bak")
+        run_command("python3 ../migrate.py --dry-run",
                     "Missing configuration file")
-        os.rename("config/config.ini.bak", "config/config.ini")
+        os.rename("../config/config.ini.bak", "../config/config.ini")
 
 def test_report_generation():
     """Test report file generation"""
@@ -109,8 +109,8 @@ def test_report_generation():
     print("=" * 80)
     
     # Check if reports directory exists and has files
-    if os.path.exists("reports"):
-        reports = [f for f in os.listdir("reports") if f.endswith('.json')]
+    if os.path.exists("../reports"):
+        reports = [f for f in os.listdir("../reports") if f.endswith('.json')]
         print(f"✅ Found {len(reports)} report files:")
         for report in reports[:5]:  # Show first 5
             print(f"   📄 {report}")
@@ -136,14 +136,14 @@ def main():
     print(f"✅ Python version: {python_version}")
     
     # Check if main script exists
-    if os.path.exists("migrate.py"):
+    if os.path.exists("../migrate.py"):
         print("✅ migrate.py found")
     else:
         print("❌ migrate.py not found")
         return
     
     # Check if config exists
-    if os.path.exists("config/config.ini"):
+    if os.path.exists("../config/config.ini"):
         print("✅ Configuration file found")
     else:
         print("⚠️  Configuration file not found (tests will show this)")
