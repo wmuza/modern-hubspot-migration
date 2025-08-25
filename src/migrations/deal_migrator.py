@@ -322,7 +322,7 @@ def migrate_deals():
     migrator = DealMigrator(prod_token, sandbox_token)
     
     # Run migration
-    success = migrator.migrate_deals(batch_size=10, limit=20)  # Test with small batch first
+    success = migrator.migrate_deals(batch_size=10, limit=50)  # Test with larger batch to find new deals
     
     if success:
         # Generate report

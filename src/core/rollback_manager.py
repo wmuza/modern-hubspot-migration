@@ -11,6 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.utils import load_env_config, get_api_headers, make_hubspot_request
 import json
 import glob
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -133,7 +134,8 @@ class RollbackManager:
             
             success, result = make_hubspot_request('DELETE', url, headers)
             
-            if success:
+            # For DELETE operations, 204 (No Content) is success
+            if success or (isinstance(result, dict) and result.get('status_code') == 204):
                 deleted += 1
                 self.rollback_actions.append({
                     'action': 'delete_property',
@@ -141,6 +143,7 @@ class RollbackManager:
                     'property_name': prop_name,
                     'status': 'success'
                 })
+                print(f"    ✅ Deleted property: {prop_name}")
             else:
                 failed += 1
                 error_msg = str(result)[:100] if result else "Unknown error"
