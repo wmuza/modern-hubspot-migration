@@ -1250,23 +1250,81 @@ class SelectiveSyncManager:
         return mapping
     
     def _create_association(self, from_object_id: str, to_object_id: str, from_type: str, to_type: str) -> bool:
-        """Create an association between two objects"""
+        """Create an association between two objects using HubSpot batch associations API"""
         headers = get_api_headers(self.sandbox_token)
         
-        # Use HubSpot's association API
-        assoc_url = f'https://api.hubapi.com/crm/v3/objects/{from_type}/{from_object_id}/associations/{to_type}/{to_object_id}/1'
+        # Try using the batch associations API which is more reliable
+        # This API allows creating multiple associations at once but we'll use it for single ones too
+        batch_url = f'https://api.hubapi.com/crm/v3/associations/{from_type}/{to_type}/batch/create'
         
-        success, result = make_hubspot_request('PUT', assoc_url, headers)
+        # The batch API requires specific payload format
+        payload = {
+            "inputs": [
+                {
+                    "from": {
+                        "id": from_object_id
+                    },
+                    "to": {
+                        "id": to_object_id
+                    },
+                    "type": "contact_to_deal" if from_type == "contacts" and to_type == "deals" else 
+                            "deal_to_contact" if from_type == "deals" and to_type == "contacts" else
+                            "contact_to_company" if from_type == "contacts" and to_type == "companies" else
+                            "company_to_contact" if from_type == "companies" and to_type == "contacts" else
+                            "company_to_deal" if from_type == "companies" and to_type == "deals" else
+                            "deal_to_company"
+                }
+            ]
+        }
+        
+        print(f"      🔗 Creating {from_type} {from_object_id} → {to_type} {to_object_id}")
+        
+        success, result = make_hubspot_request('POST', batch_url, headers, json_data=payload)
         
         if success:
+            # Check if the association was created
+            if isinstance(result, dict):
+                status = result.get('status', 'COMPLETE')
+                results_list = result.get('results', [])
+                if results_list and len(results_list) > 0:
+                    print(f"      ✅ Association created successfully")
+                    return True
+                elif status == 'COMPLETE':
+                    print(f"      ✅ Association created")
+                    return True
+            print(f"      ✅ Association request completed")
             return True
         else:
-            # Association might already exist, which is fine
-            if isinstance(result, dict) and result.get('status_code') == 409:
-                return True  # Already exists
+            # Check for specific error codes
+            if isinstance(result, dict):
+                status_code = result.get('status_code', 0)
+                error_msg = result.get('error', {})
+                
+                if status_code == 409:
+                    print(f"      ℹ️  Association already exists")
+                    return True  # Already exists, that's fine
+                elif status_code == 404:
+                    print(f"      ❌ One of the objects not found: {from_object_id} or {to_object_id}")
+                    return False
+                elif status_code == 400:
+                    # Parse the error message
+                    if 'message' in error_msg:
+                        error_detail = error_msg.get('message', '')
+                        if 'already exists' in error_detail.lower():
+                            print(f"      ℹ️  Association already exists")
+                            return True
+                        else:
+                            print(f"      ❌ Bad request: {error_detail}")
+                    print(f"      🔍 URL: {batch_url}")
+                    print(f"      🔍 Payload: {payload}")
+                else:
+                    print(f"      ❌ Failed to create {from_type}-{to_type} association: {result}")
+                    print(f"      🔍 URL: {batch_url}")
+                    print(f"      🔍 Payload: {payload}")
             else:
-                print(f"      ⚠️  Failed to create {from_type}-{to_type} association: {result}")
-                return False
+                print(f"      ❌ Failed to create association: {result}")
+                
+            return False
 
 def main():
     """Demo function for selective sync"""
