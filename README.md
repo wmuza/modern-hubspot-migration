@@ -108,14 +108,30 @@ You need to create "Private Apps" in both HubSpot accounts to get access keys.
 2. Click "Create a private app"
 3. Give it a name like "Migration Tool - Source"
 4. Go to the "Scopes" tab and select these permissions:
+   
+   **CRM Objects (Read & Write):**
    - `crm.objects.contacts.read`
    - `crm.objects.contacts.write`
    - `crm.objects.companies.read`
    - `crm.objects.companies.write`
+   - `crm.objects.deals.read`
+   - `crm.objects.deals.write`
+   
+   **Properties & Schema:**
    - `crm.schemas.contacts.read`
+   - `crm.schemas.contacts.write` (for custom properties)
    - `crm.schemas.companies.read`
-   - `crm.associations.read`
-   - `crm.associations.write`
+   - `crm.schemas.companies.write` (for custom properties)
+   - `crm.schemas.deals.read`
+   - `crm.schemas.deals.write` (for custom properties)
+   
+   **Pipelines (for Deals):**
+   - `crm.objects.deals.read` (already included above)
+   - `sales-email-read` (if using sales features)
+   
+   **Associations:**
+   - `crm.objects.associations.read` (or legacy: `crm.associations.read`)
+   - `crm.objects.associations.write` (or legacy: `crm.associations.write`)
 5. Click "Create app"
 6. Copy the access token (starts with `pat-na1-`)
 

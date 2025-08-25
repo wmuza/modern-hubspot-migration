@@ -5,10 +5,20 @@
 1. **Python 3.8+** installed on your system
 2. **HubSpot Private App Access Tokens** for both source and destination portals
 3. **Appropriate permissions** in both HubSpot portals:
+   
+   **CRM Objects (Read & Write):**
    - `crm.objects.contacts.read` and `crm.objects.contacts.write`
    - `crm.objects.companies.read` and `crm.objects.companies.write`
-   - `crm.schemas.contacts.read` and `crm.schemas.companies.read`
-   - `crm.associations.read` and `crm.associations.write`
+   - `crm.objects.deals.read` and `crm.objects.deals.write`
+   
+   **Properties & Schema:**
+   - `crm.schemas.contacts.read` and `crm.schemas.contacts.write`
+   - `crm.schemas.companies.read` and `crm.schemas.companies.write`
+   - `crm.schemas.deals.read` and `crm.schemas.deals.write`
+   
+   **Associations:**
+   - `crm.objects.associations.read` and `crm.objects.associations.write`
+   - (Legacy: `crm.associations.read` and `crm.associations.write`)
 
 ## Installation Steps
 
@@ -71,14 +81,20 @@ echo "HUBSPOT_SANDBOX_API_KEY=pat-na1-your-sandbox-token" >> .env
    - Name: "Migration Tool - [Portal Name]"
    - Description: "Data migration between HubSpot portals"
 5. **Set Scopes** (Required permissions):
-   - `crm.objects.contacts.read`
-   - `crm.objects.contacts.write`
-   - `crm.objects.companies.read`
-   - `crm.objects.companies.write`
-   - `crm.schemas.contacts.read`
-   - `crm.schemas.companies.read`
-   - `crm.associations.read`
-   - `crm.associations.write`
+   
+   **CRM Objects:**
+   - `crm.objects.contacts.read` and `crm.objects.contacts.write`
+   - `crm.objects.companies.read` and `crm.objects.companies.write`
+   - `crm.objects.deals.read` and `crm.objects.deals.write`
+   
+   **Properties & Schema:**
+   - `crm.schemas.contacts.read` and `crm.schemas.contacts.write`
+   - `crm.schemas.companies.read` and `crm.schemas.companies.write`
+   - `crm.schemas.deals.read` and `crm.schemas.deals.write`
+   
+   **Associations:**
+   - `crm.objects.associations.read` and `crm.objects.associations.write`
+   - (Alternative: `crm.associations.read` and `crm.associations.write`)
 6. **Create the app** and copy the access token
 
 ### Security Best Practices

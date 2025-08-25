@@ -59,15 +59,27 @@ cp config/config.example.ini config/config.ini
 4. **Click "Create a private app"**
 5. **Name it:** "Migration Tool"
 6. **Click the "Scopes" tab**
-7. **Check these 8 boxes:**
+7. **Check these scopes** (organize by category for easier finding):
+   
+   **CRM Objects:**
    - ☑️ `crm.objects.contacts.read`
    - ☑️ `crm.objects.contacts.write`  
    - ☑️ `crm.objects.companies.read`
    - ☑️ `crm.objects.companies.write`
+   - ☑️ `crm.objects.deals.read`
+   - ☑️ `crm.objects.deals.write`
+   
+   **Properties & Schema:**
    - ☑️ `crm.schemas.contacts.read`
+   - ☑️ `crm.schemas.contacts.write`
    - ☑️ `crm.schemas.companies.read`
-   - ☑️ `crm.associations.read`
-   - ☑️ `crm.associations.write`
+   - ☑️ `crm.schemas.companies.write`
+   - ☑️ `crm.schemas.deals.read`
+   - ☑️ `crm.schemas.deals.write`
+   
+   **Associations:**
+   - ☑️ `crm.objects.associations.read`
+   - ☑️ `crm.objects.associations.write`
 8. **Click "Create app"**
 9. **Copy the token** (starts with `pat-na1-`)
 
@@ -123,7 +135,7 @@ python migrate.py --limit 5
 - Reinstall Python and make sure to check "Add Python to PATH"
 
 **"Permission denied" error?**
-- Make sure your Private Apps have all 8 scopes checked
+- Make sure your Private Apps have all required scopes checked (15 scopes total for full functionality)
 
 **"No contacts found" error?**
 - Check that your source HubSpot account actually has contacts

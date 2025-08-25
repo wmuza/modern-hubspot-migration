@@ -30,16 +30,58 @@ python migrate.py --verbose
 python migrate.py --dry-run
 ```
 
-### Advanced Options
+### Object-Specific Migration
 ```bash
-# Skip property migration (if already done)
-python migrate.py --skip-properties
-
-# Migrate only contacts (no associations)
+# Migrate only contacts and companies
 python migrate.py --contacts-only
 
-# Combine options
-python migrate.py --verbose --limit 50 --dry-run
+# Migrate only deals and pipelines
+python migrate.py --deals-only
+
+# Skip deal migration
+python migrate.py --skip-deals
+
+# Skip property migration (if already done)
+python migrate.py --skip-properties
+```
+
+### Selective Sync (NEW!)
+```bash
+# Sync contacts created in last 7 days with their deals
+python migrate.py --selective-contacts --days-since-created 7
+
+# Sync specific contacts by ID with all related data
+python migrate.py --selective-contacts --contact-ids "12345,67890"
+
+# Sync contacts from specific email domains
+python migrate.py --selective-contacts --email-domains "company.com,partner.org"
+
+# Sync specific deals with their contacts
+python migrate.py --selective-deals --deal-ids "111,222,333"
+
+# Sync recent deals with all related data
+python migrate.py --selective-deals --days-since-created 30
+```
+
+### Rollback & Undo (NEW!)
+```bash
+# Show what can be rolled back
+python migrate.py --show-rollback-options
+
+# Undo the last migration
+python migrate.py --rollback-last
+
+# Undo the last 3 migrations
+python migrate.py --rollback-last-n 3
+
+# Delete all migrated records but keep properties/pipelines
+python migrate.py --reset-records-only
+
+# Delete all custom properties but keep records
+python migrate.py --reset-properties-only
+
+# Complete reset - remove everything (requires confirmation)
+python migrate.py --full-reset
 ```
 
 ## Step-by-Step Migration
@@ -69,15 +111,32 @@ Migrate contacts with all their custom properties:
 python src/migrations/contact_migration.py
 ```
 
-### 4. Association Migration
-Migrate company associations and relationships:
+### 4. Deal Migration (NEW!)
+Migrate deals with pipelines and properties:
 
 ```bash
-# Run association migration only
-python src/migrations/enterprise_association_migrator.py
+# Run deal property migration
+python src/migrations/deal_property_migrator.py
+
+# Run deal pipeline migration
+python src/migrations/deal_pipeline_migrator.py
+
+# Run deal object migration
+python src/migrations/deal_migrator.py
 ```
 
-### 5. Verification
+### 5. Association Migration
+Migrate relationships between objects:
+
+```bash
+# Run contact-company associations
+python src/migrations/enterprise_association_migrator.py
+
+# Run deal associations
+python src/migrations/deal_association_migrator.py
+```
+
+### 6. Verification
 Verify data integrity after migration:
 
 ```bash
