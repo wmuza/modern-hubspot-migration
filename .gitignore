@@ -1,0 +1,71 @@
+# Security - NEVER commit sensitive data
+.env
+.env.*
+config.ini
+config/*.ini
+config/*.json
+**/secrets.*
+**/*_token*
+**/*_key*
+**/*_password*
+
+# Logs and Reports - Portal-specific data
+logs/
+reports/
+*.log
+migration_report_*.json
+*_report_*.json
+audit_*.json
+field_analysis.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Portal-specific data files
+**/company_mapping.json
+**/contact_mapping.json
+**/property_analysis_*.json
+**/migration_data_*.csv
