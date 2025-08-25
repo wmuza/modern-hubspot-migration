@@ -38,7 +38,7 @@ class SelectiveSyncManager:
         """Get contacts based on various criteria ordered by creation date DESC (newest first)"""
         headers = get_api_headers(self.prod_token)
         
-        # Check if we need to use search API for date filtering
+        # First, get contact IDs with date filtering
         if 'days_since_created' in criteria:
             from datetime import datetime, timedelta
             
@@ -47,7 +47,7 @@ class SelectiveSyncManager:
             threshold_date = datetime.now() - timedelta(days=days_back)
             threshold_timestamp = int(threshold_date.timestamp() * 1000)  # HubSpot uses milliseconds
             
-            # Use search API for date filtering
+            # Use search API for date filtering (only get basic info first)
             url = 'https://api.hubapi.com/crm/v3/objects/contacts/search'
             
             payload = {
@@ -76,9 +76,16 @@ class SelectiveSyncManager:
             success, data = make_hubspot_request('GET', url, headers, params=params)
         
         if success:
-            contacts = data.get('results', [])
-            print(f"📊 Date filter: Found {len(contacts)} contacts created in last {criteria.get('days_since_created', 'all')} days")
-            return contacts
+            basic_contacts = data.get('results', [])
+            print(f"📊 Date filter: Found {len(basic_contacts)} contacts created in last {criteria.get('days_since_created', 'all')} days")
+            
+            # Now fetch full contact data with all properties
+            if basic_contacts:
+                print(f"📋 Fetching full contact properties...")
+                full_contacts = self._fetch_full_contact_properties(basic_contacts)
+                return full_contacts
+            else:
+                return basic_contacts
         else:
             print(f"❌ Error fetching contacts: {data}")
             return []
@@ -227,6 +234,149 @@ class SelectiveSyncManager:
         
         return related_companies
     
+    def _fetch_full_contact_properties(self, basic_contacts: List[Dict]) -> List[Dict]:
+        """Fetch full contact data with all properties"""
+        from core.field_filters import HubSpotFieldFilter
+        
+        # Get all writable properties for comprehensive data fetching
+        filter_system = HubSpotFieldFilter()
+        headers = get_api_headers(self.prod_token)
+        
+        # Get writable properties list
+        url = 'https://api.hubapi.com/crm/v3/properties/contacts'
+        success, data = make_hubspot_request('GET', url, headers)
+        
+        if not success:
+            print(f"  ⚠️  Could not fetch property list, using basic contacts")
+            return basic_contacts
+            
+        properties = data.get('results', [])
+        safe_props = filter_system.get_safe_properties_list(properties)
+        
+        print(f"  📊 Fetching {len(safe_props)} properties for {len(basic_contacts)} contacts")
+        
+        # Fetch full contact data for each contact
+        full_contacts = []
+        for contact in basic_contacts:
+            contact_id = contact['id']
+            contact_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}'
+            
+            params = {
+                'properties': ','.join(safe_props)
+            }
+            
+            success, full_contact_data = make_hubspot_request('GET', contact_url, headers, params=params)
+            
+            if success:
+                full_contacts.append(full_contact_data)
+            else:
+                print(f"  ⚠️  Could not fetch full data for contact {contact_id}, using basic data")
+                full_contacts.append(contact)
+                
+            time.sleep(0.1)  # Rate limiting
+        
+        print(f"  ✅ Fetched full property data for {len(full_contacts)} contacts")
+        return full_contacts
+    
+    def _verify_and_fix_contact_properties(self, sandbox_contact_id: str, original_contact: Dict[str, Any]) -> bool:
+        """Verify all properties were transferred correctly and fix missing ones"""
+        print(f"    🔍 Verifying properties for contact {sandbox_contact_id}...")
+        
+        from core.field_filters import HubSpotFieldFilter
+        
+        # Get the contact from sandbox
+        headers = get_api_headers(self.sandbox_token)
+        sandbox_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{sandbox_contact_id}'
+        
+        # Get all properties for comparison
+        filter_system = HubSpotFieldFilter()
+        
+        # Get writable properties list
+        props_url = 'https://api.hubapi.com/crm/v3/properties/contacts'
+        props_success, props_data = make_hubspot_request('GET', props_url, headers)
+        
+        if not props_success:
+            print(f"    ❌ Could not fetch properties list for verification")
+            return False
+            
+        properties = props_data.get('results', [])
+        safe_props = filter_system.get_safe_properties_list(properties)
+        
+        params = {
+            'properties': ','.join(safe_props)
+        }
+        
+        success, sandbox_data = make_hubspot_request('GET', sandbox_url, headers, params=params)
+        
+        if not success:
+            print(f"    ❌ Could not fetch sandbox contact data for verification")
+            return False
+        
+        # Compare properties
+        original_props = original_contact.get('properties', {})
+        sandbox_props = sandbox_data.get('properties', {})
+        
+        missing_props = {}
+        different_props = {}
+        
+        # Check important properties specifically
+        key_properties = ['phone', 'mobilephone', 'company', 'jobtitle', 'website', 'city', 'state', 'country']
+        
+        for prop_name, prop_value in original_props.items():
+            if prop_name in safe_props and prop_value:  # Only check non-empty values
+                sandbox_value = sandbox_props.get(prop_name)
+                
+                if not sandbox_value:
+                    missing_props[prop_name] = prop_value
+                elif str(sandbox_value).strip() != str(prop_value).strip():
+                    different_props[prop_name] = {
+                        'original': prop_value,
+                        'sandbox': sandbox_value
+                    }
+        
+        # Report findings
+        if missing_props or different_props:
+            print(f"    ⚠️  Property verification issues found:")
+            
+            if missing_props:
+                print(f"      📋 Missing properties: {len(missing_props)}")
+                for prop, value in list(missing_props.items())[:5]:  # Show first 5
+                    print(f"        • {prop}: {str(value)[:50]}")
+                if len(missing_props) > 5:
+                    print(f"        ... and {len(missing_props)-5} more")
+            
+            if different_props:
+                print(f"      🔄 Different values: {len(different_props)}")
+                for prop, values in list(different_props.items())[:3]:  # Show first 3
+                    print(f"        • {prop}: '{values['original']}' vs '{values['sandbox']}'")
+            
+            # Fix missing properties
+            if missing_props:
+                print(f"    🔧 Fixing {len(missing_props)} missing properties...")
+                
+                # Filter the missing properties through the field filter
+                filtered_missing = filter_system.filter_contact_properties(missing_props, is_update=True)
+                
+                if filtered_missing:
+                    update_payload = {'properties': filtered_missing}
+                    update_success, update_result = make_hubspot_request('PATCH', sandbox_url, headers, json_data=update_payload)
+                    
+                    if update_success:
+                        print(f"    ✅ Successfully updated {len(filtered_missing)} properties")
+                        return True
+                    else:
+                        print(f"    ❌ Failed to update properties: {update_result}")
+                        return False
+                else:
+                    print(f"    ℹ️  No properties needed updating after filtering")
+                    return True
+            else:
+                print(f"    ℹ️  Only value differences found, no missing properties to fix")
+                return True
+        else:
+            print(f"    ✅ All properties verified successfully")
+            return True
+
     def selective_sync_contacts_with_deals(self, contact_criteria: Dict[str, Any]) -> Dict[str, Any]:
         """Sync specific contacts and their associated deals"""
         print("🎯 SELECTIVE SYNC: CONTACTS → DEALS")
@@ -405,12 +555,20 @@ class SelectiveSyncManager:
                         if success:
                             print(f"      🔄 Updated existing contact (ID: {existing_id})")
                             migrated_count += 1
+                            
+                            # Verify and fix properties
+                            time.sleep(0.5)  # Brief delay before verification
+                            self._verify_and_fix_contact_properties(existing_id, contact)
                     else:
                         # Create new contact
                         success, new_id = create_contact_in_sandbox(self.sandbox_token, contact, filter_system)
                         if success:
                             print(f"      ✅ Created new contact (ID: {new_id})")
                             migrated_count += 1
+                            
+                            # Verify and fix properties
+                            time.sleep(0.5)  # Brief delay before verification
+                            self._verify_and_fix_contact_properties(new_id, contact)
                         else:
                             print(f"      ❌ Failed to create contact: {new_id}")
                 else:
@@ -422,6 +580,10 @@ class SelectiveSyncManager:
                     if success:
                         print(f"      ✅ Created new contact (ID: {new_id})")
                         migrated_count += 1
+                        
+                        # Verify and fix properties
+                        time.sleep(0.5)  # Brief delay before verification
+                        self._verify_and_fix_contact_properties(new_id, contact)
                     else:
                         print(f"      ❌ Failed to create contact: {new_id}")
             
@@ -456,22 +618,172 @@ class SelectiveSyncManager:
         return migrated_count
     
     def _create_selective_associations(self, contact_ids: List[str], deal_ids: List[str], company_ids: List[str]) -> int:
-        """Create associations between migrated objects - simplified approach for selective sync"""
-        print(f"  🔗 Creating associations for migrated contacts...")
+        """Create associations between migrated objects using proper association API"""
+        print(f"  🔗 Creating associations between migrated objects...")
         
         associations_created = 0
+        headers = get_api_headers(self.sandbox_token)
         
-        # For selective sync, we'll skip the complex association migration
-        # since we don't have company associations for the specific contacts
-        # This would need to be implemented properly for full functionality
+        # First, get the mapping of old IDs to new sandbox IDs
+        old_to_new_contacts = self._get_contact_id_mapping(contact_ids)
+        old_to_new_deals = self._get_deal_id_mapping(deal_ids) if deal_ids else {}
+        old_to_new_companies = self._get_company_id_mapping(company_ids) if company_ids else {}
         
-        print(f"  ℹ️  Selective sync completed without complex associations")
-        print(f"  📊 Migrated {len(contact_ids)} contacts successfully")
+        print(f"    📋 ID Mappings: {len(old_to_new_contacts)} contacts, {len(old_to_new_deals)} deals, {len(old_to_new_companies)} companies")
         
-        # Return a positive count to indicate basic success
-        associations_created = len(contact_ids)
+        # Create contact-to-company associations
+        if old_to_new_contacts and old_to_new_companies:
+            print(f"    🏢 Creating contact-to-company associations...")
+            
+            # Get original associations from production
+            for prod_contact_id in contact_ids:
+                if prod_contact_id in old_to_new_contacts:
+                    sandbox_contact_id = old_to_new_contacts[prod_contact_id]
+                    
+                    # Find companies associated with this contact in production
+                    prod_headers = get_api_headers(self.prod_token)
+                    assoc_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{prod_contact_id}/associations/companies'
+                    
+                    success, assoc_data = make_hubspot_request('GET', assoc_url, prod_headers)
+                    
+                    if success:
+                        prod_company_ids = [result['id'] for result in assoc_data.get('results', [])]
+                        
+                        # Create associations in sandbox
+                        for prod_company_id in prod_company_ids:
+                            if prod_company_id in old_to_new_companies:
+                                sandbox_company_id = old_to_new_companies[prod_company_id]
+                                
+                                if self._create_association(sandbox_contact_id, sandbox_company_id, 'contacts', 'companies'):
+                                    associations_created += 1
+                    
+                    time.sleep(0.1)  # Rate limiting
         
+        # Create contact-to-deal associations  
+        if old_to_new_contacts and old_to_new_deals:
+            print(f"    💼 Creating contact-to-deal associations...")
+            
+            # Get original associations from production
+            for prod_contact_id in contact_ids:
+                if prod_contact_id in old_to_new_contacts:
+                    sandbox_contact_id = old_to_new_contacts[prod_contact_id]
+                    
+                    # Find deals associated with this contact in production
+                    prod_headers = get_api_headers(self.prod_token)
+                    assoc_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{prod_contact_id}/associations/deals'
+                    
+                    success, assoc_data = make_hubspot_request('GET', assoc_url, prod_headers)
+                    
+                    if success:
+                        prod_deal_ids = [result['id'] for result in assoc_data.get('results', [])]
+                        
+                        # Create associations in sandbox
+                        for prod_deal_id in prod_deal_ids:
+                            if prod_deal_id in old_to_new_deals:
+                                sandbox_deal_id = old_to_new_deals[prod_deal_id]
+                                
+                                if self._create_association(sandbox_contact_id, sandbox_deal_id, 'contacts', 'deals'):
+                                    associations_created += 1
+                    
+                    time.sleep(0.1)  # Rate limiting
+        
+        print(f"  ✅ Created {associations_created} associations successfully")
         return associations_created
+    
+    def _get_contact_id_mapping(self, prod_contact_ids: List[str]) -> Dict[str, str]:
+        """Get mapping from production contact IDs to sandbox contact IDs"""
+        mapping = {}
+        
+        # Import contact search function
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'migrations'))
+        from contact_migration import find_contact_by_email
+        
+        prod_headers = get_api_headers(self.prod_token)
+        
+        for prod_id in prod_contact_ids:
+            # Get email from production contact
+            prod_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{prod_id}'
+            success, prod_data = make_hubspot_request('GET', prod_url, prod_headers, params={'properties': 'email'})
+            
+            if success:
+                email = prod_data.get('properties', {}).get('email')
+                if email:
+                    sandbox_id = find_contact_by_email(self.sandbox_token, email)
+                    if sandbox_id:
+                        mapping[prod_id] = sandbox_id
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        return mapping
+    
+    def _get_deal_id_mapping(self, prod_deal_ids: List[str]) -> Dict[str, str]:
+        """Get mapping from production deal IDs to sandbox deal IDs"""
+        # This would need proper implementation based on deal matching logic
+        # For now, return empty mapping since deals are complex to match
+        return {}
+    
+    def _get_company_id_mapping(self, prod_company_ids: List[str]) -> Dict[str, str]:
+        """Get mapping from production company IDs to sandbox company IDs"""
+        mapping = {}
+        
+        prod_headers = get_api_headers(self.prod_token)
+        sandbox_headers = get_api_headers(self.sandbox_token)
+        
+        for prod_id in prod_company_ids:
+            # Get company domain from production
+            prod_url = f'https://api.hubapi.com/crm/v3/objects/companies/{prod_id}'
+            success, prod_data = make_hubspot_request('GET', prod_url, prod_headers, params={'properties': 'domain,name'})
+            
+            if success:
+                domain = prod_data.get('properties', {}).get('domain')
+                name = prod_data.get('properties', {}).get('name')
+                
+                if domain or name:
+                    # Search for company in sandbox by domain or name
+                    search_url = 'https://api.hubapi.com/crm/v3/objects/companies/search'
+                    
+                    filters = []
+                    if domain:
+                        filters.append({'propertyName': 'domain', 'operator': 'EQ', 'value': domain})
+                    elif name:
+                        filters.append({'propertyName': 'name', 'operator': 'EQ', 'value': name})
+                    
+                    if filters:
+                        search_payload = {
+                            'filterGroups': [{'filters': filters}],
+                            'properties': ['domain', 'name'],
+                            'limit': 1
+                        }
+                        
+                        search_success, search_data = make_hubspot_request('POST', search_url, sandbox_headers, json_data=search_payload)
+                        
+                        if search_success:
+                            results = search_data.get('results', [])
+                            if results:
+                                mapping[prod_id] = results[0]['id']
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        return mapping
+    
+    def _create_association(self, from_object_id: str, to_object_id: str, from_type: str, to_type: str) -> bool:
+        """Create an association between two objects"""
+        headers = get_api_headers(self.sandbox_token)
+        
+        # Use HubSpot's association API
+        assoc_url = f'https://api.hubapi.com/crm/v3/objects/{from_type}/{from_object_id}/associations/{to_type}/{to_object_id}/1'
+        
+        success, result = make_hubspot_request('PUT', assoc_url, headers)
+        
+        if success:
+            return True
+        else:
+            # Association might already exist, which is fine
+            if isinstance(result, dict) and result.get('status_code') == 409:
+                return True  # Already exists
+            else:
+                print(f"      ⚠️  Failed to create {from_type}-{to_type} association: {result}")
+                return False
 
 def main():
     """Demo function for selective sync"""

@@ -15,6 +15,64 @@ from utils.utils import (
 )
 from core.field_filters import HubSpotFieldFilter
 
+def _verify_contact_properties(sandbox_token: str, sandbox_contact_id: str, original_contact: Dict[str, Any], filter_system: HubSpotFieldFilter) -> bool:
+    """Verify all properties were transferred correctly and fix missing ones"""
+    headers = get_api_headers(sandbox_token)
+    sandbox_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{sandbox_contact_id}'
+    
+    # Get writable properties list
+    props_url = 'https://api.hubapi.com/crm/v3/properties/contacts'
+    props_success, props_data = make_hubspot_request('GET', props_url, headers)
+    
+    if not props_success:
+        return False
+        
+    properties = props_data.get('results', [])
+    safe_props = filter_system.get_safe_properties_list(properties)
+    
+    params = {
+        'properties': ','.join(safe_props)
+    }
+    
+    success, sandbox_data = make_hubspot_request('GET', sandbox_url, headers, params=params)
+    
+    if not success:
+        return False
+    
+    # Compare properties
+    original_props = original_contact.get('properties', {})
+    sandbox_props = sandbox_data.get('properties', {})
+    
+    missing_props = {}
+    key_properties = ['phone', 'mobilephone', 'company', 'jobtitle', 'website', 'city', 'state', 'country']
+    
+    for prop_name, prop_value in original_props.items():
+        if prop_name in safe_props and prop_value and prop_name in key_properties:  # Only check key properties
+            sandbox_value = sandbox_props.get(prop_name)
+            
+            if not sandbox_value:
+                missing_props[prop_name] = prop_value
+    
+    # Fix missing properties
+    if missing_props:
+        print(f"    🔧 Fixing {len(missing_props)} missing key properties...")
+        
+        # Filter the missing properties through the field filter
+        filtered_missing = filter_system.filter_contact_properties(missing_props, is_update=True)
+        
+        if filtered_missing:
+            update_payload = {'properties': filtered_missing}
+            update_success, update_result = make_hubspot_request('PATCH', sandbox_url, headers, json_data=update_payload)
+            
+            if update_success:
+                print(f"    ✅ Updated {len(filtered_missing)} properties")
+                return True
+            else:
+                print(f"    ⚠️  Property update failed")
+                return False
+        
+    return True
+
 def get_writable_properties(token: str, filter_system: HubSpotFieldFilter) -> List[str]:
     """Get list of writable contact property names"""
     headers = get_api_headers(token)
@@ -194,6 +252,10 @@ def migrate_contacts(prod_token: str, sandbox_token: str, limit: int = 50) -> Di
                 if success:
                     stats['migrated'] += 1
                     print(f"    ✅ Created new contact (ID: {result})")
+                    
+                    # Verify and fix properties after creation
+                    time.sleep(0.3)  # Brief delay before verification
+                    _verify_contact_properties(sandbox_token, result, contact, filter_system)
                 else:
                     stats['failed'] += 1
                     print(f"    ❌ Creation failed: {str(result)[:60]}...")
@@ -206,6 +268,10 @@ def migrate_contacts(prod_token: str, sandbox_token: str, limit: int = 50) -> Di
             if success:
                 stats['migrated'] += 1
                 print(f"    ✅ Created new contact (ID: {result})")
+                
+                # Verify and fix properties after creation
+                time.sleep(0.3)  # Brief delay before verification
+                _verify_contact_properties(sandbox_token, result, contact, filter_system)
             else:
                 stats['failed'] += 1
                 print(f"    ❌ Creation failed: {str(result)[:60]}...")
