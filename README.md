@@ -274,6 +274,7 @@ Migrating associations |██████████████████�
 - **Selective operations** - migrate only what you need
 - **Automatic backups** - detailed JSON reports of everything that happened
 - **Rate limited** - won't overload HubSpot's servers
+- **Newest first** - always migrates most recently created records first (sorted by creation date)
 
 ## Common Questions
 
@@ -297,6 +298,9 @@ A: Use `--rollback-last` to undo changes. All operations are logged in JSON repo
 
 **Q: Can I test without making changes?**
 A: Yes! Always use `--dry-run` first to preview what will happen.
+
+**Q: In what order are records migrated?**
+A: All migrations fetch the **most recently created records first** (sorted by creation date descending). This ensures that when using limits (like `--limit 20`), you get your newest deals, contacts, etc.
 
 ## Getting Help
 

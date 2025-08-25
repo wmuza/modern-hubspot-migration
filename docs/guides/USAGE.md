@@ -17,7 +17,7 @@ This will run the complete migration process with default settings.
 # Full migration with default settings
 python migrate.py
 
-# Migrate specific number of contacts
+# Migrate specific number of contacts (newest first)
 python migrate.py --limit 100
 
 # Use custom configuration file
@@ -208,10 +208,17 @@ python migrate.py --config examples/configs/small-batch-test.ini --verbose
 ### Console Output
 - 🔧 **Configuration**: Shows migration settings
 - 🏢 **Property Migration**: Creates custom properties
-- 👥 **Contact Migration**: Migrates contact records
+- 👥 **Contact Migration**: Migrates contact records (newest first)
+- 💼 **Deal Migration**: Migrates deal records (newest first)
 - 🔗 **Association Migration**: Creates relationships
 - ✅ **Verification**: Validates data integrity
 - 📊 **Summary**: Final results and statistics
+
+### Data Ordering
+**All migrations fetch the most recently created records first** (sorted by `createdate DESC`):
+- When using `--limit 20`, you get the 20 newest contacts/deals
+- Selective sync targets the most recent records matching your criteria
+- This ensures predictable behavior when working with subsets of data
 
 ### Log Files
 Located in `logs/` directory:

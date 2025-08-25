@@ -2,6 +2,57 @@
 
 All notable changes to the HubSpot Modern Migration Tool will be documented in this file.
 
+## [2.0.1] - 2025-08-25
+
+### Fixed
+- 🎯 **Critical Ordering Issue**: All migrations now fetch newest records first (sorted by createdate DESC)
+- 🔢 **Limit Enforcement Bug**: Deal migration now properly respects user-specified limits (e.g., --limit 20)
+- 🔧 **Parameter Passing**: Fixed deal migration function to accept limit parameter from main script
+- 📊 **Selective Sync Ordering**: Contact and deal selective sync now return most recent records first
+- 🧹 **Environment Cleanup**: Logs and reports folders are properly cleaned for fresh starts
+
+### Technical Improvements
+- Added `sorts: 'createdate:desc'` to all HubSpot API calls in:
+  - Deal migration (`deal_migrator.py`)
+  - Contact migration (`contact_migration.py`) 
+  - Selective sync for both contacts and deals (`selective_sync.py`)
+- Modified `migrate_deals()` function signature to accept limit parameter
+- Updated main migration script to pass contact_limit to deal migration
+- Enhanced API parameter consistency across all migration modules
+
+### Impact
+- Users now get the most recently created records when using limits
+- Deal migrations properly respect --limit parameter instead of using hardcoded values
+- Selective sync operations target the newest records for better accuracy
+- Migration behavior is now predictable and matches user expectations
+
+## [2.0.0] - 2025-08-25
+
+### Added
+- 💼 **Complete Deal Migration** with properties, pipelines, and associations
+- 🎯 **Selective Sync System** for targeted migrations of specific contacts/deals
+- 🔄 **Complete Rollback System** with granular undo capabilities
+- 🗑️ **Advanced Reset Options** (records-only, properties-only, full reset)
+- 📊 **Enhanced Field Filtering** (116 safe properties out of 359 total)
+- 🏗️ **Deal Pipeline Recreation** with exact structure preservation
+- 🔗 **Deal Association Migration** for contact-deal-company relationships
+- 📈 **Enterprise Batch Processing** with intelligent rate limiting
+
+### Migration Capabilities Extended
+- Deal object migration with full property fidelity
+- Deal pipeline and stage recreation
+- Deal-contact-company association mapping
+- Selective migration based on creation date or IDs
+- Email domain-based contact filtering
+- Complete rollback of any migration type
+
+### Advanced Features
+- Command-line interface with 15+ options
+- Real-time progress tracking and reporting
+- Comprehensive JSON audit trails
+- Production-grade error handling and recovery
+- Professional CLI with status indicators
+
 ## [1.0.0] - 2025-08-25
 
 ### Added
