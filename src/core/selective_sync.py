@@ -163,7 +163,7 @@ class SelectiveSyncManager:
         all_contacts = []
         after = None
         page = 1
-        max_per_page = 100  # HubSpot max limit per request
+        max_per_page = 100  # HubSpot max limit per request (but Search API might default to 50)
         
         # If limit is specified, use it; otherwise get all results
         total_limit = limit if limit else float('inf')
@@ -196,7 +196,8 @@ class SelectiveSyncManager:
                 
                 # Check if there are more results
                 paging = data.get('paging', {})
-                after = paging.get('next', {}).get('after')
+                next_page = paging.get('next', {})
+                after = next_page.get('after') if next_page else None
                 
                 # Break if no more results or we've hit our limit
                 if not after or len(page_results) == 0:
@@ -596,20 +597,21 @@ class SelectiveSyncManager:
         # Step 6: Migrate related deals  
         print("💼 Migrating related deals...")
         deals_migrated = 0
+        deal_id_mapping = {}
         if related_deals:
-            deals_migrated = self._migrate_specific_deals(related_deals)
+            deals_migrated, deal_id_mapping = self._migrate_specific_deals(related_deals)
         
         # Step 7: Create associations
         print("🔗 Creating associations...")
         associations_created = 0
         
         # Add delay to allow HubSpot to index the newly created contacts
-        if contacts_migrated > 0:
-            print("  ⏳ Waiting for HubSpot to index new contacts...")
+        if contacts_migrated > 0 or deals_migrated > 0:
+            print("  ⏳ Waiting for HubSpot to index new records...")
             time.sleep(3)  # 3 second delay for indexing
         
         if contact_ids and (deal_ids or company_ids):
-            associations_created = self._create_selective_associations(contact_ids, deal_ids, company_ids)
+            associations_created = self._create_selective_associations(contact_ids, deal_ids, company_ids, deal_id_mapping)
         
         results = {
             'contacts_synced': contacts_migrated,
@@ -896,38 +898,134 @@ class SelectiveSyncManager:
             error_msg = data.get('error', str(data)) if isinstance(data, dict) else str(data)
             return False, error_msg
     
-    def _migrate_specific_deals(self, deals: List[Dict]) -> int:
-        """Migrate specific deals to sandbox"""
+    def _migrate_specific_deals(self, deals: List[Dict]) -> tuple[int, Dict[str, str]]:
+        """Migrate specific deals to sandbox and return mapping of old to new IDs"""
         print(f"  💼 Migrating {len(deals)} deals...")
         
-        # For deals, we need to ensure pipelines exist first
         migrated_count = 0
+        deal_id_mapping = {}  # production_deal_id -> sandbox_deal_id
+        headers = get_api_headers(self.sandbox_token)
         
         try:
-            # Import deal migration functions
-            sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'migrations'))
-            from deal_migrator import migrate_deals
+            for i, deal in enumerate(deals, 1):
+                deal_props = deal.get('properties', {})
+                deal_name = (deal_props.get('dealname') or '').strip()
+                amount = deal_props.get('amount', '')
+                stage = deal_props.get('dealstage', '')
+                production_deal_id = deal['id']
+                
+                print(f"    💼 [{i}/{len(deals)}] {deal_name} (${amount})")
+                
+                # Check if deal already exists in sandbox
+                existing_deal_id = self._find_deal_by_name_and_amount(deal_name, amount)
+                
+                if existing_deal_id:
+                    print(f"      🔄 Deal already exists (ID: {existing_deal_id})")
+                    deal_id_mapping[production_deal_id] = existing_deal_id
+                    migrated_count += 1
+                else:
+                    # Create new deal
+                    success, new_deal_id = self._create_deal_in_sandbox(deal)
+                    if success:
+                        print(f"      ✅ Created new deal (ID: {new_deal_id})")
+                        deal_id_mapping[production_deal_id] = new_deal_id
+                        migrated_count += 1
+                    else:
+                        print(f"      ❌ Failed to create deal: {new_deal_id}")
+                
+                time.sleep(0.2)  # Rate limiting
             
-            # Use the existing deal migration system
-            result = migrate_deals(len(deals))
-            if result:
-                migrated_count = len(deals)  # Assume success for found deals
-                print(f"  ✅ Successfully migrated {migrated_count} deals")
+            print(f"  ✅ Successfully migrated {migrated_count}/{len(deals)} deals")
+            print(f"  📋 Deal ID mapping: {len(deal_id_mapping)} deals mapped")
+            
         except Exception as e:
             print(f"  ❌ Deal migration failed: {str(e)}")
             
-        return migrated_count
+        return migrated_count, deal_id_mapping
     
-    def _create_selective_associations(self, contact_ids: List[str], deal_ids: List[str], company_ids: List[str]) -> int:
+    def _find_deal_by_name_and_amount(self, deal_name: str, amount: str) -> Optional[str]:
+        """Find a deal in sandbox by name and amount"""
+        if not deal_name:
+            return None
+            
+        headers = get_api_headers(self.sandbox_token)
+        search_url = 'https://api.hubapi.com/crm/v3/objects/deals/search'
+        
+        # Primary filter: exact deal name match
+        filters = [{
+            'propertyName': 'dealname',
+            'operator': 'EQ',
+            'value': deal_name
+        }]
+        
+        # Secondary filter: amount if available
+        if amount:
+            filters.append({
+                'propertyName': 'amount',
+                'operator': 'EQ',
+                'value': amount
+            })
+        
+        search_payload = {
+            'filterGroups': [{'filters': filters}],
+            'properties': ['dealname', 'amount', 'dealstage'],
+            'limit': 1
+        }
+        
+        success, search_data = make_hubspot_request('POST', search_url, headers, json_data=search_payload)
+        
+        if success:
+            results = search_data.get('results', [])
+            return results[0]['id'] if results else None
+        
+        return None
+    
+    def _create_deal_in_sandbox(self, deal: Dict[str, Any]) -> tuple[bool, str]:
+        """Create a new deal in sandbox"""
+        headers = get_api_headers(self.sandbox_token)
+        url = 'https://api.hubapi.com/crm/v3/objects/deals'
+        
+        # Filter properties to only include safe ones
+        deal_props = deal.get('properties', {})
+        
+        # Common deal properties that are usually safe
+        safe_deal_props = {}
+        safe_fields = ['dealname', 'amount', 'dealstage', 'pipeline', 'closedate', 'createdate']
+        
+        for field in safe_fields:
+            if field in deal_props and deal_props[field]:
+                safe_deal_props[field] = deal_props[field]
+        
+        if not safe_deal_props:
+            return False, "No safe properties to migrate"
+        
+        # Ensure we have a pipeline - use default if not specified
+        if 'pipeline' not in safe_deal_props:
+            safe_deal_props['pipeline'] = 'default'  # HubSpot will use the default pipeline
+        
+        payload = {'properties': safe_deal_props}
+        
+        success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+        
+        if success:
+            return True, data.get('id', 'unknown')
+        else:
+            error_msg = data.get('error', str(data)) if isinstance(data, dict) else str(data)
+            return False, error_msg
+    
+    def _create_selective_associations(self, contact_ids: List[str], deal_ids: List[str], company_ids: List[str], deal_id_mapping: Dict[str, str] = None) -> int:
         """Create associations between migrated objects using proper association API"""
         print(f"  🔗 Creating associations between migrated objects...")
         
         associations_created = 0
         headers = get_api_headers(self.sandbox_token)
         
-        # First, get the mapping of old IDs to new sandbox IDs
+        # Get the mapping of old IDs to new sandbox IDs
         old_to_new_contacts = self._get_contact_id_mapping(contact_ids)
-        old_to_new_deals = self._get_deal_id_mapping(deal_ids) if deal_ids else {}
+        
+        # Use the provided deal mapping instead of searching again
+        old_to_new_deals = deal_id_mapping if deal_id_mapping else {}
+        
         old_to_new_companies = self._get_company_id_mapping(company_ids) if company_ids else {}
         
         print(f"    📋 ID Mappings: {len(old_to_new_contacts)} contacts, {len(old_to_new_deals)} deals, {len(old_to_new_companies)} companies")
