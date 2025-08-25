@@ -46,7 +46,7 @@ class SelectiveSyncManager:
         # Priority 2: Email domain filtering
         elif 'email_domains' in criteria and criteria['email_domains']:
             print(f"📧 Fetching contacts by email domains: {criteria['email_domains']}")
-            return self._fetch_contacts_by_email_domains(criteria['email_domains'], criteria.get('limit', 50))
+            return self._fetch_contacts_by_email_domains(criteria['email_domains'], criteria.get('limit'))
         
         # Priority 3: Date filtering  
         elif 'days_since_created' in criteria:
@@ -146,8 +146,8 @@ class SelectiveSyncManager:
         
         return contacts
     
-    def _fetch_contacts_by_email_domains(self, email_domains: List[str], limit: int = 50) -> List[Dict]:
-        """Fetch contacts by email domains using search API"""
+    def _fetch_contacts_by_email_domains(self, email_domains: List[str], limit: int = None) -> List[Dict]:
+        """Fetch contacts by email domains using search API with pagination to get ALL results"""
         headers = get_api_headers(self.prod_token)
         url = 'https://api.hubapi.com/crm/v3/objects/contacts/search'
         
@@ -160,32 +160,68 @@ class SelectiveSyncManager:
                 'value': f'@{domain.strip().lstrip("@")}'
             })
         
-        # HubSpot search API expects OR logic within a filter group
-        payload = {
-            'filterGroups': [{
-                'filters': filters
-            }],
-            'sorts': [{'propertyName': 'createdate', 'direction': 'DESCENDING'}],
-            'properties': ['email', 'firstname', 'lastname', 'createdate', 'hs_object_id'],
-            'limit': limit
-        }
+        all_contacts = []
+        after = None
+        page = 1
+        max_per_page = 100  # HubSpot max limit per request
         
-        success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+        # If limit is specified, use it; otherwise get all results
+        total_limit = limit if limit else float('inf')
         
-        if success:
-            basic_contacts = data.get('results', [])
-            print(f"📊 Email domain filter: Found {len(basic_contacts)} contacts with domains {email_domains}")
+        while len(all_contacts) < total_limit:
+            # Calculate how many to fetch in this request
+            current_limit = min(max_per_page, total_limit - len(all_contacts)) if limit else max_per_page
             
-            # Now fetch full contact data with all properties
-            if basic_contacts:
-                print(f"📋 Fetching full contact properties...")
-                full_contacts = self._fetch_full_contact_properties(basic_contacts)
-                return full_contacts
+            # HubSpot search API payload
+            payload = {
+                'filterGroups': [{
+                    'filters': filters
+                }],
+                'sorts': [{'propertyName': 'createdate', 'direction': 'DESCENDING'}],
+                'properties': ['email', 'firstname', 'lastname', 'createdate', 'hs_object_id'],
+                'limit': int(current_limit)
+            }
+            
+            # Add pagination token if we have one
+            if after:
+                payload['after'] = after
+            
+            success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+            
+            if success:
+                page_results = data.get('results', [])
+                all_contacts.extend(page_results)
+                
+                print(f"📊 Page {page}: Found {len(page_results)} contacts (Total so far: {len(all_contacts)})")
+                
+                # Check if there are more results
+                paging = data.get('paging', {})
+                after = paging.get('next', {}).get('after')
+                
+                # Break if no more results or we've hit our limit
+                if not after or len(page_results) == 0:
+                    break
+                
+                page += 1
+                time.sleep(0.2)  # Rate limiting between pages
+                
             else:
-                return basic_contacts
+                print(f"❌ Error fetching contacts by email domains (page {page}): {data}")
+                break
+        
+        # Trim to exact limit if specified
+        if limit and len(all_contacts) > limit:
+            all_contacts = all_contacts[:limit]
+        
+        print(f"📊 Email domain filter: Found {len(all_contacts)} total contacts with domains {email_domains}")
+        
+        # Now fetch full contact data with all properties
+        if all_contacts:
+            print(f"📋 Fetching full contact properties...")
+            full_contacts = self._fetch_full_contact_properties(all_contacts)
+            return full_contacts
         else:
-            print(f"❌ Error fetching contacts by email domains: {data}")
-            return []
+            return all_contacts
     
     def get_deals_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
         """Get deals based on various criteria ordered by creation date DESC (newest first)"""
