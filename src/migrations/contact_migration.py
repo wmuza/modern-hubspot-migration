@@ -172,26 +172,36 @@ def migrate_contacts(prod_token: str, sandbox_token: str, limit: int = 50) -> Di
         
         print_progress_bar(i-1, len(prod_contacts), "Migrating contacts")
         
-        if not email:
-            print(f"  ⏭️  Skipping contact without email: {display_name}")
-            continue
-        
-        print(f"  📧 {display_name} ({email})")
-        
-        # Check if contact already exists in sandbox
-        existing_contact_id = find_contact_by_email(sandbox_token, email)
-        
-        if existing_contact_id:
-            # Update existing contact
-            success, result = update_contact_in_sandbox(sandbox_token, existing_contact_id, contact, filter_system)
-            if success:
-                stats['updated'] += 1
-                print(f"    ✅ Updated with {result} properties")
+        if email:
+            # Contact with email - check for duplicates
+            print(f"  📧 {display_name} ({email})")
+            
+            # Check if contact already exists in sandbox
+            existing_contact_id = find_contact_by_email(sandbox_token, email)
+            
+            if existing_contact_id:
+                # Update existing contact
+                success, result = update_contact_in_sandbox(sandbox_token, existing_contact_id, contact, filter_system)
+                if success:
+                    stats['updated'] += 1
+                    print(f"    ✅ Updated with {result} properties")
+                else:
+                    stats['failed'] += 1
+                    print(f"    ❌ Update failed: {str(result)[:60]}...")
             else:
-                stats['failed'] += 1
-                print(f"    ❌ Update failed: {str(result)[:60]}...")
+                # Create new contact
+                success, result = create_contact_in_sandbox(sandbox_token, contact, filter_system)
+                if success:
+                    stats['migrated'] += 1
+                    print(f"    ✅ Created new contact (ID: {result})")
+                else:
+                    stats['failed'] += 1
+                    print(f"    ❌ Creation failed: {str(result)[:60]}...")
         else:
-            # Create new contact
+            # Contact without email - create directly (no duplicate checking possible)
+            print(f"  👤 {display_name} (no email)")
+            
+            # Create new contact without duplicate checking
             success, result = create_contact_in_sandbox(sandbox_token, contact, filter_system)
             if success:
                 stats['migrated'] += 1

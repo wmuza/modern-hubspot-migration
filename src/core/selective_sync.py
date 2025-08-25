@@ -392,23 +392,32 @@ class SelectiveSyncManager:
                 
                 print_progress_bar(i-1, len(contacts), "Migrating contacts")
                 
-                if not email:
-                    print(f"    ⏭️  Skipping contact without email: {display_name}")
-                    continue
-                
-                print(f"    📧 {display_name} ({email})")
-                
-                # Check if contact exists in sandbox
-                existing_id = find_contact_by_email(self.sandbox_token, email)
-                
-                if existing_id:
-                    # Update existing contact
-                    success, _ = update_contact_in_sandbox(self.sandbox_token, existing_id, contact, filter_system)
-                    if success:
-                        print(f"      🔄 Updated existing contact (ID: {existing_id})")
-                        migrated_count += 1
+                if email:
+                    # Contact with email - check for duplicates
+                    print(f"    📧 {display_name} ({email})")
+                    
+                    # Check if contact exists in sandbox
+                    existing_id = find_contact_by_email(self.sandbox_token, email)
+                    
+                    if existing_id:
+                        # Update existing contact
+                        success, _ = update_contact_in_sandbox(self.sandbox_token, existing_id, contact, filter_system)
+                        if success:
+                            print(f"      🔄 Updated existing contact (ID: {existing_id})")
+                            migrated_count += 1
+                    else:
+                        # Create new contact
+                        success, new_id = create_contact_in_sandbox(self.sandbox_token, contact, filter_system)
+                        if success:
+                            print(f"      ✅ Created new contact (ID: {new_id})")
+                            migrated_count += 1
+                        else:
+                            print(f"      ❌ Failed to create contact: {new_id}")
                 else:
-                    # Create new contact
+                    # Contact without email - create directly (no duplicate checking possible)
+                    print(f"    👤 {display_name} (no email)")
+                    
+                    # Create new contact without duplicate checking
                     success, new_id = create_contact_in_sandbox(self.sandbox_token, contact, filter_system)
                     if success:
                         print(f"      ✅ Created new contact (ID: {new_id})")
