@@ -1,6 +1,23 @@
-# HubSpot Migration Tool - Copy Your Data Between HubSpot Accounts
+# HubSpot Migration Tool - Enterprise-Grade Data Migration Between HubSpot Accounts
 
-**Want to copy your contacts and companies from one HubSpot account to another?** This tool does it automatically and safely!
+**Want to copy your contacts, companies, and deals from one HubSpot account to another?** This tool does it automatically with professional-grade features!
+
+## 🎯 What's New (v2.0)
+
+**✨ Selective Sync** - Migrate only what you need:
+- Copy contacts from last 7 days with their deals
+- Target specific email domains or contact IDs
+- Smart relationship mapping included
+
+**🔄 Complete Rollback System** - Full undo capabilities:
+- Rollback any migration with one command
+- Granular reset options (records-only, properties-only, or full)
+- Complete audit trail in JSON reports
+
+**💼 Deal Migration** - Full sales data support:
+- Migrates deals with pipelines and stages
+- Preserves deal-contact-company relationships
+- Maintains deal values and probabilities
 
 ## What This Tool Does
 
@@ -235,28 +252,35 @@ Migrating associations |██████████████████�
 
 ## Safety Features
 
-- **No data is deleted** - only copied
+- **Test mode available** - see what would happen before doing it with `--dry-run`
 - **Won't create duplicates** - updates existing records instead
-- **Test mode available** - see what would happen before doing it
-- **Automatic backups** - detailed logs of everything that happened
+- **Complete rollback** - undo any migration with `--rollback-last`
+- **Selective operations** - migrate only what you need
+- **Automatic backups** - detailed JSON reports of everything that happened
 - **Rate limited** - won't overload HubSpot's servers
 
 ## Common Questions
 
-**Q: Will this delete my data?**
-A: No! This tool only copies and creates data. It never deletes anything.
+**Q: Will this delete my data from the source?**
+A: No! This tool only copies data. The source data remains untouched.
 
 **Q: What if I run it twice?**
 A: It's safe! The tool will update existing records instead of creating duplicates.
+
+**Q: Can I undo a migration?**
+A: Yes! Use `--rollback-last` to undo the most recent migration, or `--show-rollback-options` to see what can be undone.
+
+**Q: Can I migrate only specific contacts?**
+A: Yes! Use selective sync: `--selective-contacts --days-since-created 7` for recent contacts, or `--contact-ids "123,456"` for specific IDs.
 
 **Q: How long does it take?**
 A: For 50 contacts: about 2-3 minutes. For 1000 contacts: about 30-45 minutes.
 
 **Q: What if something goes wrong?**
-A: The tool creates detailed logs in the `logs` folder. You can also start over safely.
+A: Use `--rollback-last` to undo changes. All operations are logged in JSON reports in the `reports` folder.
 
-**Q: Can I migrate only some contacts?**
-A: Yes! Use `--limit 10` to migrate only 10 contacts.
+**Q: Can I test without making changes?**
+A: Yes! Always use `--dry-run` first to preview what will happen.
 
 ## Getting Help
 
@@ -274,20 +298,87 @@ A: Yes! Use `--limit 10` to migrate only 10 contacts.
 - **Project Planning**: View `docs/planning/` for development roadmap
 - Create an issue on this GitHub page with your error message
 
-## Advanced Options
+## Complete Command Reference
 
+### Basic Migration Commands
 ```bash
-# Copy only 100 contacts
-python migrate.py --limit 100
+# Full migration (contacts, companies, deals, associations)
+python migrate.py
 
-# Test without making changes
+# Test mode - preview without changes
 python migrate.py --dry-run
 
-# Use detailed logging
-python migrate.py --verbose
+# Limit number of contacts
+python migrate.py --limit 100
 
-# Use a different configuration
-python migrate.py --config examples/configurations/small-batch-test.ini
+# Verbose logging for debugging
+python migrate.py --verbose
+```
+
+### Object-Specific Migration
+```bash
+# Migrate only contacts and companies
+python migrate.py --contacts-only
+
+# Migrate only deals and pipelines
+python migrate.py --deals-only
+
+# Skip deal migration
+python migrate.py --skip-deals
+
+# Skip property migration
+python migrate.py --skip-properties
+```
+
+### Selective Sync (NEW!)
+```bash
+# Sync contacts created in last 7 days with their deals
+python migrate.py --selective-contacts --days-since-created 7
+
+# Sync specific contacts by ID with all related data
+python migrate.py --selective-contacts --contact-ids "12345,67890"
+
+# Sync contacts from specific email domains
+python migrate.py --selective-contacts --email-domains "company.com,partner.org"
+
+# Sync specific deals with their contacts
+python migrate.py --selective-deals --deal-ids "111,222,333"
+
+# Sync recent deals with all related data
+python migrate.py --selective-deals --days-since-created 30
+```
+
+### Rollback & Undo (NEW!)
+```bash
+# Show what can be rolled back
+python migrate.py --show-rollback-options
+
+# Undo the last migration
+python migrate.py --rollback-last
+
+# Undo the last 3 migrations
+python migrate.py --rollback-last-n 3
+
+# Delete all migrated records but keep properties/pipelines
+python migrate.py --reset-records-only
+
+# Delete all custom properties but keep records
+python migrate.py --reset-properties-only
+
+# Complete reset - remove everything (requires confirmation)
+python migrate.py --full-reset
+```
+
+### Advanced Combinations
+```bash
+# Test selective sync without making changes
+python migrate.py --selective-contacts --days-since-created 7 --dry-run
+
+# Verbose selective migration
+python migrate.py --selective-deals --verbose --limit 10
+
+# Use custom configuration file
+python migrate.py --config examples/configurations/production-to-staging.ini
 ```
 
 ## 📁 Project Structure
@@ -295,7 +386,21 @@ python migrate.py --config examples/configurations/small-batch-test.ini
 ```
 modern-hubspot-migration/
 ├── 📄 migrate.py              # Main migration script (start here!)
-├── 📁 config/                 # Configuration files
+├── 📁 config/                 # Configuration files (.env and config.ini)
+├── 📁 src/                    # Source code
+│   ├── 📁 core/              # Core functionality
+│   │   ├── field_filters.py  # Property filtering system
+│   │   ├── selective_sync.py # Selective sync engine (NEW!)
+│   │   └── rollback_manager.py # Rollback system (NEW!)
+│   ├── 📁 migrations/        # Migration modules
+│   │   ├── contact_migration.py
+│   │   ├── company_property_migrator.py
+│   │   ├── enterprise_association_migrator.py
+│   │   ├── deal_property_migrator.py (NEW!)
+│   │   ├── deal_pipeline_migrator.py (NEW!)
+│   │   ├── deal_migrator.py (NEW!)
+│   │   └── deal_association_migrator.py (NEW!)
+│   └── 📁 utils/             # Utilities and helpers
 ├── 📁 docs/                   # All documentation
 │   ├── 📁 guides/            # User guides (setup, usage)
 │   ├── 📁 planning/          # Project roadmap and planning
