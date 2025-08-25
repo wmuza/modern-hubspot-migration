@@ -41,6 +41,8 @@ from migrations.deal_property_migrator import migrate_deal_properties
 from migrations.deal_pipeline_migrator import migrate_deal_pipelines
 from migrations.deal_migrator import migrate_deals
 from migrations.deal_association_migrator import migrate_deal_associations
+from core.selective_sync import SelectiveSyncManager
+from core.rollback_manager import RollbackManager
 from validators.verify_company_properties import verify_company_data
 
 def parse_arguments():
@@ -68,6 +70,34 @@ def parse_arguments():
     parser.add_argument('--skip-deals', action='store_true',
                        help='Skip deal migration steps')
     
+    # Selective Sync Options
+    parser.add_argument('--selective-contacts', action='store_true',
+                       help='Sync specific contacts and their related deals')
+    parser.add_argument('--selective-deals', action='store_true',
+                       help='Sync specific deals and their related contacts')
+    parser.add_argument('--contact-ids', type=str,
+                       help='Comma-separated list of contact IDs for selective sync')
+    parser.add_argument('--deal-ids', type=str,
+                       help='Comma-separated list of deal IDs for selective sync')
+    parser.add_argument('--days-since-created', type=int,
+                       help='Sync objects created within last N days')
+    parser.add_argument('--email-domains', type=str,
+                       help='Comma-separated list of email domains for contact filtering')
+    
+    # Rollback Options
+    parser.add_argument('--rollback-last', action='store_true',
+                       help='Rollback the last migration')
+    parser.add_argument('--rollback-last-n', type=int,
+                       help='Rollback the last N migrations')
+    parser.add_argument('--reset-records-only', action='store_true',
+                       help='Delete all migrated records but keep properties/pipelines')
+    parser.add_argument('--reset-properties-only', action='store_true',
+                       help='Delete all custom properties but keep records')
+    parser.add_argument('--full-reset', action='store_true',
+                       help='Complete reset - remove all migration changes')
+    parser.add_argument('--show-rollback-options', action='store_true',
+                       help='Show available rollback options')
+    
     return parser.parse_args()
 
 def setup_environment(config, args):
@@ -94,6 +124,124 @@ def setup_environment(config, args):
     logger.info(f"Dry run mode: {args.dry_run}")
     
     return logger
+
+def handle_rollback_operations(config, args, logger):
+    """Handle rollback and reset operations"""
+    hubspot_config = config.get_hubspot_config()
+    rollback_manager = RollbackManager(hubspot_config['sandbox_token'])
+    
+    if args.show_rollback_options:
+        print("📋 AVAILABLE ROLLBACK OPTIONS")
+        print("=" * 60)
+        reports = rollback_manager.get_migration_reports()
+        
+        if not reports:
+            print("No migration reports found.")
+            return True
+        
+        for i, report in enumerate(reports, 1):
+            print(f"{i}. {report['report_type']} - {report.get('migration_date', 'unknown')[:19]}")
+            if report.get('summary'):
+                summary = report['summary']
+                for key, value in summary.items():
+                    if isinstance(value, int) and value > 0:
+                        print(f"   {key}: {value}")
+        return True
+    
+    if args.rollback_last:
+        print("🔄 ROLLING BACK LAST MIGRATION")
+        print("=" * 60)
+        result = rollback_manager.rollback_last_migration()
+        report_file = rollback_manager.save_rollback_report(result)
+        print(f"📄 Rollback report saved: {report_file}")
+        return True
+    
+    if args.rollback_last_n:
+        print(f"🔄 ROLLING BACK LAST {args.rollback_last_n} MIGRATIONS")
+        print("=" * 60)
+        result = rollback_manager.rollback_last_n_migrations(args.rollback_last_n)
+        report_file = rollback_manager.save_rollback_report(result)
+        print(f"📄 Rollback report saved: {report_file}")
+        return True
+    
+    if args.reset_records_only:
+        print("🧹 RECORDS-ONLY RESET")
+        print("=" * 60)
+        print("⚠️  This will delete all migrated records but keep properties and pipelines")
+        result = rollback_manager.records_only_reset()
+        report_file = rollback_manager.save_rollback_report(result)
+        print(f"📄 Reset report saved: {report_file}")
+        return True
+    
+    if args.reset_properties_only:
+        print("🔧 PROPERTIES-ONLY RESET")
+        print("=" * 60)
+        print("⚠️  This will delete all custom properties created during migration")
+        result = rollback_manager.properties_only_reset()
+        report_file = rollback_manager.save_rollback_report(result)
+        print(f"📄 Reset report saved: {report_file}")
+        return True
+    
+    if args.full_reset:
+        print("💥 FULL RESET")
+        print("=" * 60)
+        print("⚠️  This will remove ALL changes made by the migration tool")
+        
+        confirm = input("Type 'CONFIRM' to proceed with full reset: ")
+        if confirm != 'CONFIRM':
+            print("❌ Full reset cancelled")
+            return True
+        
+        result = rollback_manager.full_reset()
+        report_file = rollback_manager.save_rollback_report(result)
+        print(f"📄 Reset report saved: {report_file}")
+        return True
+    
+    return False
+
+def handle_selective_sync(config, args, logger):
+    """Handle selective sync operations"""
+    hubspot_config = config.get_hubspot_config()
+    sync_manager = SelectiveSyncManager(
+        hubspot_config['production_token'],
+        hubspot_config['sandbox_token']
+    )
+    
+    # Build criteria based on arguments
+    criteria = {}
+    
+    if args.contact_ids:
+        criteria['contact_ids'] = [id.strip() for id in args.contact_ids.split(',')]
+    
+    if args.deal_ids:
+        criteria['deal_ids'] = [id.strip() for id in args.deal_ids.split(',')]
+    
+    if args.days_since_created:
+        criteria['days_since_created'] = args.days_since_created
+    
+    if args.email_domains:
+        criteria['email_domains'] = [domain.strip() for domain in args.email_domains.split(',')]
+    
+    if not criteria:
+        criteria['limit'] = 10  # Default small test
+    
+    if args.selective_contacts:
+        print("🎯 SELECTIVE SYNC: CONTACTS → DEALS")
+        print("=" * 60)
+        results = sync_manager.selective_sync_contacts_with_deals(criteria)
+        report_file = sync_manager.save_selective_sync_report(results)
+        print(f"📄 Selective sync report saved: {report_file}")
+        return True
+    
+    if args.selective_deals:
+        print("🎯 SELECTIVE SYNC: DEALS → CONTACTS")
+        print("=" * 60)
+        results = sync_manager.selective_sync_deals_with_contacts(criteria)
+        report_file = sync_manager.save_selective_sync_report(results)
+        print(f"📄 Selective sync report saved: {report_file}")
+        return True
+    
+    return False
 
 def run_migration(config, args, logger):
     """Execute the complete migration process"""
@@ -243,7 +391,18 @@ def main():
         # Setup environment
         logger = setup_environment(config, args)
         
-        # Run migration
+        # Handle rollback operations first
+        if (args.show_rollback_options or args.rollback_last or args.rollback_last_n or 
+            args.reset_records_only or args.reset_properties_only or args.full_reset):
+            success = handle_rollback_operations(config, args, logger)
+            sys.exit(0 if success else 1)
+        
+        # Handle selective sync operations
+        if args.selective_contacts or args.selective_deals:
+            success = handle_selective_sync(config, args, logger)
+            sys.exit(0 if success else 1)
+        
+        # Run normal migration
         success = run_migration(config, args, logger)
         
         # Exit with appropriate code

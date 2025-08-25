@@ -9,8 +9,16 @@ This tool helps you copy data from one HubSpot account (like your main business 
 **What gets copied:**
 - 👥 **All your contacts** (customers, leads, prospects)
 - 🏢 **All your companies** (businesses, organizations)  
-- 🔗 **The connections** between contacts and companies
+- 💼 **All your deals** (sales opportunities, quotes)
+- 📊 **Deal pipelines and stages** (your sales process)
+- 🔗 **All connections** between contacts, companies, and deals
 - 📝 **All custom information fields** you've created
+
+**Advanced Features:**
+- 🎯 **Selective Sync** - Copy only specific contacts/deals and their related data
+- 🔄 **Rollback & Undo** - Reverse changes if something goes wrong
+- 🧹 **Granular Reset** - Remove only records, only properties, or everything
+- 📊 **Detailed Reporting** - Track exactly what was copied
 
 ## Who This Is For
 
@@ -132,8 +140,71 @@ python migrate.py --limit 5
 When you're ready to copy all your data:
 
 ```bash
-# Copy all contacts and companies
+# Copy all contacts, companies, and deals
 python migrate.py
+
+# Copy only contacts and their related data
+python migrate.py --contacts-only
+
+# Copy only deals and their related data  
+python migrate.py --deals-only
+```
+
+### Advanced Features
+
+#### Selective Sync - Copy Only What You Need
+
+Copy only specific contacts and their related deals:
+
+```bash
+# Copy contacts created in the last 7 days with all their deals
+python migrate.py --selective-contacts --days-since-created 7
+
+# Copy specific contacts by ID with their deals
+python migrate.py --selective-contacts --contact-ids "123,456,789"
+
+# Copy contacts from specific email domains
+python migrate.py --selective-contacts --email-domains "company.com,partner.org"
+```
+
+Copy only specific deals and their related contacts:
+
+```bash
+# Copy deals created in the last 30 days with all their contacts
+python migrate.py --selective-deals --days-since-created 30
+
+# Copy specific deals by ID with their contacts  
+python migrate.py --selective-deals --deal-ids "111,222,333"
+```
+
+#### Rollback & Undo - Fix Mistakes
+
+If something goes wrong, you can undo changes:
+
+```bash
+# See what can be rolled back
+python migrate.py --show-rollback-options
+
+# Undo the last migration
+python migrate.py --rollback-last
+
+# Undo the last 3 migrations
+python migrate.py --rollback-last-n 3
+```
+
+#### Reset Options - Clean Slate
+
+Remove migrated data selectively:
+
+```bash
+# Remove all records but keep custom properties and pipelines
+python migrate.py --reset-records-only
+
+# Remove all custom properties but keep records  
+python migrate.py --reset-properties-only
+
+# Remove everything the tool created (requires confirmation)
+python migrate.py --full-reset
 ```
 
 ## What You'll See
