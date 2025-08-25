@@ -53,14 +53,16 @@ def create_company_property(token, property_definition):
     success, data = make_hubspot_request('POST', url, headers, json_data=clean_def)
     return success, data
 
-def migrate_company_properties():
+def migrate_company_properties(prod_token=None, sandbox_token=None):
     """Main function to migrate company properties from production to sandbox"""
     print("🏢 Company Property Migration")
     print("=" * 50)
     
-    config = load_env_config()
-    prod_token = config.get('HUBSPOT_PROD_API_KEY')
-    sandbox_token = config.get('HUBSPOT_SANDBOX_API_KEY')
+    # Use provided tokens or load from config
+    if not prod_token or not sandbox_token:
+        config = load_env_config()
+        prod_token = prod_token or config.get('HUBSPOT_PROD_API_KEY')
+        sandbox_token = sandbox_token or config.get('HUBSPOT_SANDBOX_API_KEY')
     
     # Get properties from production
     print("📥 Fetching company properties from production...")

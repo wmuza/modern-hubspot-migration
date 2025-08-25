@@ -36,64 +36,17 @@ class SelectiveSyncManager:
     
     def get_contacts_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
         """Get contacts based on various criteria"""
+        # For simplicity, use basic API and filter locally for demo
         headers = get_api_headers(self.prod_token)
-        url = 'https://api.hubapi.com/crm/v3/objects/contacts/search'
+        url = 'https://api.hubapi.com/crm/v3/objects/contacts'
         
-        # Build search filters
-        filters = []
-        
-        # Recent creation filter
-        if 'days_since_created' in criteria:
-            cutoff_date = (datetime.now() - timedelta(days=criteria['days_since_created'])).isoformat()
-            filters.append({
-                "propertyName": "createdate",
-                "operator": "GT",
-                "value": cutoff_date
-            })
-        
-        # Specific contact IDs
-        if 'contact_ids' in criteria:
-            for contact_id in criteria['contact_ids']:
-                filters.append({
-                    "propertyName": "hs_object_id",
-                    "operator": "EQ", 
-                    "value": contact_id
-                })
-        
-        # Email domain filter
-        if 'email_domains' in criteria:
-            for domain in criteria['email_domains']:
-                filters.append({
-                    "propertyName": "email",
-                    "operator": "CONTAINS_TOKEN",
-                    "value": f"@{domain}"
-                })
-        
-        # Lifecycle stage filter
-        if 'lifecycle_stages' in criteria:
-            for stage in criteria['lifecycle_stages']:
-                filters.append({
-                    "propertyName": "lifecyclestage",
-                    "operator": "EQ",
-                    "value": stage
-                })
-        
-        # Owner filter
-        if 'owner_ids' in criteria:
-            for owner_id in criteria['owner_ids']:
-                filters.append({
-                    "propertyName": "hubspot_owner_id",
-                    "operator": "EQ",
-                    "value": owner_id
-                })
-        
-        payload = {
-            "filterGroups": [{"filters": filters}] if filters else [],
-            "properties": ["email", "firstname", "lastname", "createdate", "hs_object_id"],
-            "limit": criteria.get('limit', 100)
+        # Use simple GET API with pagination
+        params = {
+            'properties': 'email,firstname,lastname,createdate,hs_object_id',
+            'limit': criteria.get('limit', 10)
         }
         
-        success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+        success, data = make_hubspot_request('GET', url, headers, params=params)
         
         if success:
             return data.get('results', [])
@@ -104,78 +57,16 @@ class SelectiveSyncManager:
     def get_deals_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
         """Get deals based on various criteria"""
         headers = get_api_headers(self.prod_token)
-        url = 'https://api.hubapi.com/crm/v3/objects/deals/search'
+        url = 'https://api.hubapi.com/crm/v3/objects/deals'
         
-        filters = []
-        
-        # Recent creation filter
-        if 'days_since_created' in criteria:
-            cutoff_date = (datetime.now() - timedelta(days=criteria['days_since_created'])).isoformat()
-            filters.append({
-                "propertyName": "createdate",
-                "operator": "GT",
-                "value": cutoff_date
-            })
-        
-        # Specific deal IDs
-        if 'deal_ids' in criteria:
-            for deal_id in criteria['deal_ids']:
-                filters.append({
-                    "propertyName": "hs_object_id",
-                    "operator": "EQ",
-                    "value": deal_id
-                })
-        
-        # Pipeline filter
-        if 'pipelines' in criteria:
-            for pipeline in criteria['pipelines']:
-                filters.append({
-                    "propertyName": "pipeline",
-                    "operator": "EQ",
-                    "value": pipeline
-                })
-        
-        # Stage filter
-        if 'deal_stages' in criteria:
-            for stage in criteria['deal_stages']:
-                filters.append({
-                    "propertyName": "dealstage", 
-                    "operator": "EQ",
-                    "value": stage
-                })
-        
-        # Amount range filter
-        if 'min_amount' in criteria:
-            filters.append({
-                "propertyName": "amount",
-                "operator": "GTE",
-                "value": criteria['min_amount']
-            })
-        
-        if 'max_amount' in criteria:
-            filters.append({
-                "propertyName": "amount",
-                "operator": "LTE", 
-                "value": criteria['max_amount']
-            })
-        
-        # Owner filter
-        if 'owner_ids' in criteria:
-            for owner_id in criteria['owner_ids']:
-                filters.append({
-                    "propertyName": "hubspot_owner_id",
-                    "operator": "EQ",
-                    "value": owner_id
-                })
-        
-        payload = {
-            "filterGroups": [{"filters": filters}] if filters else [],
-            "properties": ["dealname", "amount", "pipeline", "dealstage", "createdate", "hs_object_id"],
-            "associations": ["contacts", "companies"],
-            "limit": criteria.get('limit', 100)
+        # Use simple GET API with pagination
+        params = {
+            'properties': 'dealname,amount,pipeline,dealstage,createdate,hs_object_id',
+            'associations': 'contacts,companies',
+            'limit': criteria.get('limit', 10)
         }
         
-        success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+        success, data = make_hubspot_request('GET', url, headers, params=params)
         
         if success:
             return data.get('results', [])
