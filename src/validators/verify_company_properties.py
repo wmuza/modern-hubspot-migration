@@ -4,8 +4,12 @@ Company Property Verification Script
 Compares company properties between production and sandbox to ensure data integrity
 """
 
-from utils import load_env_config, get_api_headers, make_hubspot_request
-from field_filters import HubSpotFieldFilter
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from utils.utils import load_env_config, get_api_headers, make_hubspot_request
+from core.field_filters import HubSpotFieldFilter
 import json
 
 def get_company_details(token, company_id, properties_list):

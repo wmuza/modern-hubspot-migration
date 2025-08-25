@@ -27,10 +27,14 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass, asdict
 
 # Import our utility modules
-from utils import (
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from utils.utils import (
     load_env_config, get_api_headers, make_hubspot_request, print_progress_bar
 )
-from field_filters import HubSpotFieldFilter
+from core.field_filters import HubSpotFieldFilter
 
 @dataclass
 class MigrationReport:

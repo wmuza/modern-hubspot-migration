@@ -37,6 +37,10 @@ from utils.utils import setup_logging, print_banner, print_summary
 from migrations.contact_migration import migrate_contacts
 from migrations.company_property_migrator import migrate_company_properties
 from migrations.enterprise_association_migrator import EnterpriseAssociationMigrator
+from migrations.deal_property_migrator import migrate_deal_properties
+from migrations.deal_pipeline_migrator import migrate_deal_pipelines
+from migrations.deal_migrator import migrate_deals
+from migrations.deal_association_migrator import migrate_deal_associations
 from validators.verify_company_properties import verify_company_data
 
 def parse_arguments():
@@ -59,6 +63,10 @@ def parse_arguments():
                        help='Skip property migration step')
     parser.add_argument('--contacts-only', action='store_true',
                        help='Migrate only contacts (skip associations)')
+    parser.add_argument('--deals-only', action='store_true',
+                       help='Migrate only deals (skip contacts and companies)')
+    parser.add_argument('--skip-deals', action='store_true',
+                       help='Skip deal migration steps')
     
     return parser.parse_args()
 
@@ -136,21 +144,22 @@ def run_migration(config, args, logger):
             print()
         
         # Step 2: Contact Migration
-        print("👥 STEP 2: CONTACT MIGRATION")
-        print("=" * 60)
-        if args.dry_run:
-            print(f"🌙 Dry run: Would migrate {migration_config['contact_limit']} contacts with properties")
-        else:
-            contact_results = migrate_contacts(
-                hubspot_config['production_token'],
-                hubspot_config['sandbox_token'],
-                migration_config['contact_limit']
-            )
-            migration_results['contacts'] = contact_results
-        print()
+        if not args.deals_only:
+            print("👥 STEP 2: CONTACT MIGRATION")
+            print("=" * 60)
+            if args.dry_run:
+                print(f"🌙 Dry run: Would migrate {migration_config['contact_limit']} contacts with properties")
+            else:
+                contact_results = migrate_contacts(
+                    hubspot_config['production_token'],
+                    hubspot_config['sandbox_token'],
+                    migration_config['contact_limit']
+                )
+                migration_results['contacts'] = contact_results
+            print()
         
         # Step 3: Association Migration
-        if not args.contacts_only:
+        if not args.contacts_only and not args.deals_only:
             print("🔗 STEP 3: ASSOCIATION MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -168,9 +177,40 @@ def run_migration(config, args, logger):
                 migration_results['associations'] = association_results
             print()
         
-        # Step 4: Verification
+        # Step 4: Deal Migration
+        if not args.skip_deals and not args.contacts_only:
+            print("💼 STEP 4: DEAL MIGRATION")
+            print("=" * 60)
+            if args.dry_run:
+                print("🌙 Dry run: Would migrate deal properties, pipelines, and deals")
+            else:
+                # Step 4a: Deal Properties
+                print("🔧 4a. Deal Properties Migration")
+                deal_prop_results = migrate_deal_properties()
+                migration_results['deal_properties'] = deal_prop_results
+                print()
+                
+                # Step 4b: Deal Pipelines
+                print("📊 4b. Deal Pipeline Migration")
+                pipeline_results = migrate_deal_pipelines()
+                migration_results['deal_pipelines'] = pipeline_results
+                print()
+                
+                # Step 4c: Deal Objects
+                print("💼 4c. Deal Object Migration")
+                deal_results = migrate_deals()
+                migration_results['deals'] = deal_results
+                print()
+                
+                # Step 4d: Deal Associations
+                print("🔗 4d. Deal Association Migration")
+                deal_assoc_results = migrate_deal_associations()
+                migration_results['deal_associations'] = deal_assoc_results
+            print()
+        
+        # Step 5: Verification
         if not args.dry_run:
-            print("✅ STEP 4: DATA VERIFICATION")
+            print("✅ STEP 5: DATA VERIFICATION")
             print("=" * 60)
             verify_company_data()
             print()

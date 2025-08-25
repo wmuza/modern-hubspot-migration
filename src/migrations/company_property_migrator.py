@@ -4,8 +4,12 @@ Company Property Migration Script
 Creates all custom company properties from production in sandbox before migrating data
 """
 
-from utils import load_env_config, get_api_headers, make_hubspot_request
-from field_filters import HubSpotFieldFilter
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from utils.utils import load_env_config, get_api_headers, make_hubspot_request
+from core.field_filters import HubSpotFieldFilter
 import time
 
 def get_all_company_properties(token):

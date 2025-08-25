@@ -236,3 +236,249 @@ class HubSpotFieldFilter:
             safe_properties.append('email')
         
         return safe_properties
+
+
+class DealFieldFilter:
+    """
+    Deal-specific field filtering system for HubSpot deal properties
+    """
+    
+    def __init__(self):
+        # System prefixes that should never be updated in deals
+        self.SYSTEM_PREFIXES = {
+            'hs_additional_', 'hs_all_', 'hs_analytics_', 'hs_associated_',
+            'hs_buying_', 'hs_calculated_', 'hs_clicked_', 'hs_closed_',
+            'hs_createdate_', 'hs_cross_', 'hs_currently_', 'hs_customer_',
+            'hs_data_', 'hs_deal_', 'hs_document_', 'hs_email_',
+            'hs_first_', 'hs_forecast_', 'hs_full_', 'hs_has_',
+            'hs_inferred_', 'hs_is_', 'hs_last_', 'hs_lastmodifieddate_',
+            'hs_latest_', 'hs_lead_', 'hs_likelihood_', 'hs_merged_',
+            'hs_next_', 'hs_notes_', 'hs_object_', 'hs_owning_',
+            'hs_predictive_', 'hs_projected_', 'hs_read_', 'hs_recent_',
+            'hs_sales_', 'hs_searchable_', 'hs_shared_', 'hs_source_',
+            'hs_time_', 'hs_timezone_', 'hs_unique_', 'hs_updated_',
+            'hs_user_', 'hs_was_'
+        }
+        
+        # Exact field names that are readonly or system-generated for deals
+        self.READONLY_EXACT_FIELDS = {
+            'createdate', 'lastmodifieddate', 'hs_object_id', 'hs_deal_id',
+            'num_contacted_notes', 'num_notes', 'dealid', 'deal_id',
+            'days_to_close', 'closed_won_count', 'closed_lost_count',
+            'first_deal_created_date', 'recent_deal_close_date'
+        }
+        
+        # Production-specific identifiers that don't exist in sandbox
+        self.PRODUCTION_IDENTIFIERS = {
+            'hubspot_owner_id', 'hubspot_team_id', 'associatedcompanyids',
+            'associatedvids', 'hs_all_owner_ids', 'hs_all_team_ids',
+            'hs_created_by_user_id', 'hs_updated_by_user_id',
+            'hs_object_source_user_id', 'hs_object_source_id',
+            'hs_source_object_id', 'hs_source_portal_id',
+            'hs_pinned_engagement_id', 'hs_first_engagement_object_id'
+        }
+        
+        # Analytics and calculated fields
+        self.ANALYTICS_FIELDS = {
+            'hs_analytics_source', 'hs_analytics_source_data_1',
+            'hs_analytics_source_data_2', 'ip_city', 'ip_country'
+        }
+        
+        # Deal-specific readonly prefixes
+        self.DEAL_READONLY_PREFIXES = {
+            'num_', 'first_', 'recent_', 'last_', 'total_', 'count_',
+            'days_', 'closed_', 'hs_closed_', 'hs_days_'
+        }
+    
+    def is_writable_deal_property(self, prop: Dict[str, Any]) -> bool:
+        """
+        Check if a deal property can be written to
+        
+        Args:
+            prop: Property definition from HubSpot API
+            
+        Returns:
+            True if property can be safely written to
+        """
+        prop_name = prop.get('name', '').lower()
+        
+        # Always allow core deal fields
+        core_fields = {
+            'dealname', 'amount', 'closedate', 'dealtype', 
+            'dealstage', 'pipeline', 'description'
+        }
+        
+        if prop_name in core_fields:
+            # Pipeline and dealstage need special handling
+            if prop_name in ['pipeline', 'dealstage']:
+                return True
+            return True
+        
+        # Skip if explicitly marked as hubspot defined, read-only, or calculated
+        if prop.get('hubspotDefined', False):
+            return False
+            
+        if prop.get('readOnlyValue', False):
+            return False
+            
+        if prop.get('calculated', False):
+            return False
+        
+        # Skip exact readonly field names
+        if prop_name in self.READONLY_EXACT_FIELDS:
+            return False
+        
+        # Skip production identifiers
+        if prop_name in self.PRODUCTION_IDENTIFIERS:
+            return False
+        
+        # Skip analytics fields
+        if prop_name in self.ANALYTICS_FIELDS:
+            return False
+        
+        # Skip system prefixes
+        if any(prop_name.startswith(prefix) for prefix in self.SYSTEM_PREFIXES):
+            return False
+        
+        # Skip deal-specific readonly prefixes
+        if any(prop_name.startswith(prefix) for prefix in self.DEAL_READONLY_PREFIXES):
+            return False
+        
+        # Skip any field ending with _id (likely identifiers)
+        if prop_name.endswith('_id') and prop_name not in core_fields:
+            return False
+        
+        return True
+    
+    def get_filtered_properties(self, token, include_core_only=False) -> List[str]:
+        """
+        Get filtered deal properties from HubSpot API
+        
+        Args:
+            token: HubSpot API token
+            include_core_only: If True, only return core deal fields
+            
+        Returns:
+            List of property names safe for migration
+        """
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+        from utils.utils import get_api_headers, make_hubspot_request
+        
+        if include_core_only:
+            return ['dealname', 'amount', 'closedate', 'dealtype', 'description']
+        
+        # Get all properties
+        headers = get_api_headers(token)
+        url = 'https://api.hubapi.com/crm/v3/properties/deals'
+        
+        success, data = make_hubspot_request('GET', url, headers)
+        
+        if not success:
+            print(f"❌ Error fetching deal properties: {data}")
+            return ['dealname', 'amount', 'closedate']  # Fallback to basic fields
+        
+        all_properties = data.get('results', [])
+        filtered_properties = []
+        
+        for prop in all_properties:
+            if self.is_writable_deal_property(prop):
+                filtered_properties.append(prop['name'])
+        
+        # Always include basic deal identification
+        essential_fields = ['dealname', 'amount', 'closedate']
+        for field in essential_fields:
+            if field not in filtered_properties:
+                filtered_properties.append(field)
+        
+        return filtered_properties
+    
+    def clean_deal_properties(self, deal_props: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Clean deal properties for migration
+        
+        Args:
+            deal_props: Dictionary of property name -> value
+            
+        Returns:
+            Cleaned dictionary with only safe properties
+        """
+        cleaned = {}
+        
+        for prop_name, prop_value in deal_props.items():
+            if self.is_property_name_writable(prop_name):
+                cleaned_value = self.clean_property_value(prop_value)
+                if cleaned_value is not None:
+                    cleaned[prop_name] = cleaned_value
+        
+        return cleaned
+    
+    def is_property_name_writable(self, prop_name: str) -> bool:
+        """
+        Check if a property name is writable (without full property object)
+        
+        Args:
+            prop_name: Property name
+            
+        Returns:
+            True if property name suggests it's writable
+        """
+        prop_name_lower = prop_name.lower()
+        
+        # Core deal fields are always writable
+        core_fields = {
+            'dealname', 'amount', 'closedate', 'dealtype', 
+            'pipeline', 'description'
+        }
+        
+        if prop_name_lower in core_fields:
+            return True
+        
+        # Skip exact readonly field names
+        if prop_name_lower in self.READONLY_EXACT_FIELDS:
+            return False
+        
+        # Skip production identifiers
+        if prop_name_lower in self.PRODUCTION_IDENTIFIERS:
+            return False
+        
+        # Skip analytics fields
+        if prop_name_lower in self.ANALYTICS_FIELDS:
+            return False
+        
+        # Skip system prefixes
+        if any(prop_name_lower.startswith(prefix) for prefix in self.SYSTEM_PREFIXES):
+            return False
+        
+        # Skip deal-specific readonly prefixes
+        if any(prop_name_lower.startswith(prefix) for prefix in self.DEAL_READONLY_PREFIXES):
+            return False
+        
+        # Skip any field ending with _id
+        if prop_name_lower.endswith('_id'):
+            return False
+        
+        return True
+    
+    def clean_property_value(self, value: Any) -> str | None:
+        """
+        Clean and validate a property value for API submission
+        
+        Args:
+            value: Raw property value
+            
+        Returns:
+            Cleaned string value or None if invalid
+        """
+        if value is None:
+            return None
+            
+        # Convert to string and strip whitespace
+        str_value = str(value).strip()
+        
+        # Return None for empty strings
+        if not str_value or str_value.lower() in ['none', 'null', '']:
+            return None
+            
+        return str_value
