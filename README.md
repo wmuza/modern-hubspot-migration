@@ -197,7 +197,10 @@ A: Yes! Use `--limit 10` to migrate only 10 contacts.
 4. **Check permissions**: Ensure your Private Apps have all required scopes
 
 **Still need help?**
-- Read the detailed guides in the `docs` folder
+- **Quick Start**: Read `docs/guides/QUICK_START.md` for 5-minute setup
+- **Detailed Setup**: Check `docs/guides/SETUP.md` for comprehensive guide
+- **Usage Examples**: See `docs/guides/USAGE.md` for advanced scenarios
+- **Project Planning**: View `docs/planning/` for development roadmap
 - Create an issue on this GitHub page with your error message
 
 ## Advanced Options
@@ -213,8 +216,27 @@ python migrate.py --dry-run
 python migrate.py --verbose
 
 # Use a different configuration
-python migrate.py --config examples/configs/small-batch-test.ini
+python migrate.py --config examples/configurations/small-batch-test.ini
 ```
+
+## 📁 Project Structure
+
+```
+modern-hubspot-migration/
+├── 📄 migrate.py              # Main migration script (start here!)
+├── 📁 config/                 # Configuration files
+├── 📁 docs/                   # All documentation
+│   ├── 📁 guides/            # User guides (setup, usage)
+│   ├── 📁 planning/          # Project roadmap and planning
+│   └── 📁 technical/         # Technical documentation
+├── 📁 examples/               # Example configurations and templates
+├── 📁 src/                    # Source code (automatic, don't edit)
+├── 📁 tools/                  # Testing and utility tools
+├── 📁 logs/                   # Generated logs (automatic)
+└── 📁 reports/                # Migration reports (automatic)
+```
+
+**For detailed folder structure**: See `docs/technical/FOLDER_STRUCTURE.md`
 
 ---
 
