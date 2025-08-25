@@ -52,13 +52,14 @@ class DealMigrator:
             return False
     
     def get_deals_batch(self, token, after=None, limit=100, properties=None):
-        """Get a batch of deals from HubSpot"""
+        """Get a batch of deals from HubSpot ordered by creation date DESC (newest first)"""
         headers = get_api_headers(token)
         url = 'https://api.hubapi.com/crm/v3/objects/deals'
         
         params = {
             'limit': limit,
-            'associations': 'contacts,companies'
+            'associations': 'contacts,companies',
+            'sorts': 'createdate:desc'  # Order by creation date descending (newest first)
         }
         
         if after:
@@ -305,7 +306,7 @@ class DealMigrator:
         
         return report_file, report
 
-def migrate_deals():
+def migrate_deals(limit=None):
     """Main function to execute deal migration"""
     print("💼 Deal Migration System")
     print("=" * 50)
@@ -321,8 +322,8 @@ def migrate_deals():
     # Initialize migrator
     migrator = DealMigrator(prod_token, sandbox_token)
     
-    # Run migration
-    success = migrator.migrate_deals(batch_size=10, limit=50)  # Test with larger batch to find new deals
+    # Run migration with proper limit
+    success = migrator.migrate_deals(batch_size=10, limit=limit)
     
     if success:
         # Generate report

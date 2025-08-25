@@ -30,13 +30,14 @@ def get_writable_properties(token: str, filter_system: HubSpotFieldFilter) -> Li
     return filter_system.get_safe_properties_list(properties)
 
 def get_contacts_from_production(token: str, properties: List[str], limit: int = 50) -> List[Dict[str, Any]]:
-    """Fetch contacts with specified properties from production"""
+    """Fetch contacts with specified properties from production ordered by creation date DESC (newest first)"""
     headers = get_api_headers(token)
     url = 'https://api.hubapi.com/crm/v3/objects/contacts'
     
     params = {
         'limit': limit,
-        'properties': ','.join(properties)
+        'properties': ','.join(properties),
+        'sorts': 'createdate:desc'  # Order by creation date descending (newest first)
     }
     
     success, data = make_hubspot_request('GET', url, headers, params=params)

@@ -35,15 +35,16 @@ class SelectiveSyncManager:
         }
     
     def get_contacts_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
-        """Get contacts based on various criteria"""
+        """Get contacts based on various criteria ordered by creation date DESC (newest first)"""
         # For simplicity, use basic API and filter locally for demo
         headers = get_api_headers(self.prod_token)
         url = 'https://api.hubapi.com/crm/v3/objects/contacts'
         
-        # Use simple GET API with pagination
+        # Use simple GET API with pagination, ordered by creation date descending
         params = {
             'properties': 'email,firstname,lastname,createdate,hs_object_id',
-            'limit': criteria.get('limit', 10)
+            'limit': criteria.get('limit', 10),
+            'sorts': 'createdate:desc'  # Order by creation date descending (newest first)
         }
         
         success, data = make_hubspot_request('GET', url, headers, params=params)
@@ -55,15 +56,16 @@ class SelectiveSyncManager:
             return []
     
     def get_deals_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
-        """Get deals based on various criteria"""
+        """Get deals based on various criteria ordered by creation date DESC (newest first)"""
         headers = get_api_headers(self.prod_token)
         url = 'https://api.hubapi.com/crm/v3/objects/deals'
         
-        # Use simple GET API with pagination
+        # Use simple GET API with pagination, ordered by creation date descending
         params = {
             'properties': 'dealname,amount,pipeline,dealstage,createdate,hs_object_id',
             'associations': 'contacts,companies',
-            'limit': criteria.get('limit', 10)
+            'limit': criteria.get('limit', 10),
+            'sorts': 'createdate:desc'  # Order by creation date descending (newest first)
         }
         
         success, data = make_hubspot_request('GET', url, headers, params=params)

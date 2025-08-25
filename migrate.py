@@ -346,7 +346,7 @@ def run_migration(config, args, logger):
                 
                 # Step 4c: Deal Objects
                 print("💼 4c. Deal Object Migration")
-                deal_results = migrate_deals()
+                deal_results = migrate_deals(migration_config['contact_limit'])
                 migration_results['deals'] = deal_results
                 print()
                 
