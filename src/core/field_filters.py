@@ -130,12 +130,13 @@ class HubSpotFieldFilter:
         
         return True
     
-    def filter_contact_properties(self, contact_properties: Dict[str, Any]) -> Dict[str, Any]:
+    def filter_contact_properties(self, contact_properties: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """
         Filter contact properties to only include writable ones
         
         Args:
             contact_properties: Dictionary of property name -> value
+            is_update: True if this is for updating existing contact, False for creating new
             
         Returns:
             Filtered dictionary with only writable properties
@@ -149,8 +150,8 @@ class HubSpotFieldFilter:
                 if cleaned_value is not None:
                     filtered[prop_name] = cleaned_value
         
-        # Never update email for existing contacts (can cause issues)
-        if 'email' in filtered:
+        # Only remove email for updates (not for creates)
+        if is_update and 'email' in filtered:
             del filtered['email']
         
         return filtered

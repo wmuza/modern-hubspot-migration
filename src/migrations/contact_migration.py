@@ -78,8 +78,8 @@ def create_contact_in_sandbox(token: str, contact_data: Dict[str, Any], filter_s
     headers = get_api_headers(token)
     url = 'https://api.hubapi.com/crm/v3/objects/contacts'
     
-    # Filter and clean properties
-    properties = filter_system.filter_contact_properties(contact_data.get('properties', {}))
+    # Filter and clean properties (is_update=False for new contact creation)
+    properties = filter_system.filter_contact_properties(contact_data.get('properties', {}), is_update=False)
     
     payload = {'properties': properties}
     
@@ -96,8 +96,8 @@ def update_contact_in_sandbox(token: str, contact_id: str, contact_data: Dict[st
     headers = get_api_headers(token)
     url = f'https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}'
     
-    # Filter properties using comprehensive filtering system
-    properties = filter_system.filter_contact_properties(contact_data.get('properties', {}))
+    # Filter properties using comprehensive filtering system (is_update=True for existing contact)
+    properties = filter_system.filter_contact_properties(contact_data.get('properties', {}), is_update=True)
     
     if not properties:
         return True, 0  # No properties to update
