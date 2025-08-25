@@ -69,3 +69,4 @@ Thumbs.db
 **/contact_mapping.json
 **/property_analysis_*.json
 **/migration_data_*.csv
+.claude/settings.local.json

@@ -38,8 +38,18 @@ class SelectiveSyncManager:
         """Get contacts based on various criteria ordered by creation date DESC (newest first)"""
         headers = get_api_headers(self.prod_token)
         
-        # First, get contact IDs with date filtering
-        if 'days_since_created' in criteria:
+        # Priority 1: Specific contact IDs
+        if 'contact_ids' in criteria and criteria['contact_ids']:
+            print(f"📋 Fetching {len(criteria['contact_ids'])} specific contacts by ID...")
+            return self._fetch_contacts_by_ids(criteria['contact_ids'])
+        
+        # Priority 2: Email domain filtering
+        elif 'email_domains' in criteria and criteria['email_domains']:
+            print(f"📧 Fetching contacts by email domains: {criteria['email_domains']}")
+            return self._fetch_contacts_by_email_domains(criteria['email_domains'], criteria.get('limit', 50))
+        
+        # Priority 3: Date filtering  
+        elif 'days_since_created' in criteria:
             from datetime import datetime, timedelta
             
             # Calculate the date threshold
@@ -64,6 +74,23 @@ class SelectiveSyncManager:
             }
             
             success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+            
+            if success:
+                basic_contacts = data.get('results', [])
+                print(f"📊 Date filter: Found {len(basic_contacts)} contacts created in last {criteria.get('days_since_created', 'all')} days")
+                
+                # Now fetch full contact data with all properties
+                if basic_contacts:
+                    print(f"📋 Fetching full contact properties...")
+                    full_contacts = self._fetch_full_contact_properties(basic_contacts)
+                    return full_contacts
+                else:
+                    return basic_contacts
+            else:
+                print(f"❌ Error fetching contacts by date: {data}")
+                return []
+        
+        # Priority 4: General query with limit
         else:
             # Use simple GET API with pagination, ordered by creation date descending
             url = 'https://api.hubapi.com/crm/v3/objects/contacts'
@@ -74,10 +101,80 @@ class SelectiveSyncManager:
             }
             
             success, data = make_hubspot_request('GET', url, headers, params=params)
+            
+            if success:
+                basic_contacts = data.get('results', [])
+                print(f"📊 General query: Found {len(basic_contacts)} contacts (limit: {criteria.get('limit', 50)})")
+                
+                # Now fetch full contact data with all properties
+                if basic_contacts:
+                    print(f"📋 Fetching full contact properties...")
+                    full_contacts = self._fetch_full_contact_properties(basic_contacts)
+                    return full_contacts
+                else:
+                    return basic_contacts
+            else:
+                print(f"❌ Error fetching contacts: {data}")
+                return []
+    
+    def _fetch_contacts_by_ids(self, contact_ids: List[str]) -> List[Dict]:
+        """Fetch specific contacts by their IDs"""
+        contacts = []
+        headers = get_api_headers(self.prod_token)
+        
+        for contact_id in contact_ids:
+            contact_url = f'https://api.hubapi.com/crm/v3/objects/contacts/{contact_id}'
+            params = {
+                'properties': 'email,firstname,lastname,createdate,hs_object_id'
+            }
+            
+            success, contact_data = make_hubspot_request('GET', contact_url, headers, params=params)
+            
+            if success:
+                contacts.append(contact_data)
+                print(f"  ✅ Fetched contact {contact_id}")
+            else:
+                print(f"  ❌ Failed to fetch contact {contact_id}: {contact_data}")
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        # Now fetch full properties for all found contacts
+        if contacts:
+            print(f"📋 Fetching full contact properties for {len(contacts)} contacts...")
+            full_contacts = self._fetch_full_contact_properties(contacts)
+            return full_contacts
+        
+        return contacts
+    
+    def _fetch_contacts_by_email_domains(self, email_domains: List[str], limit: int = 50) -> List[Dict]:
+        """Fetch contacts by email domains using search API"""
+        headers = get_api_headers(self.prod_token)
+        url = 'https://api.hubapi.com/crm/v3/objects/contacts/search'
+        
+        # Build OR filters for each email domain
+        filters = []
+        for domain in email_domains:
+            filters.append({
+                'propertyName': 'email',
+                'operator': 'CONTAINS_TOKEN',
+                'value': f'@{domain.strip().lstrip("@")}'
+            })
+        
+        # HubSpot search API expects OR logic within a filter group
+        payload = {
+            'filterGroups': [{
+                'filters': filters
+            }],
+            'sorts': [{'propertyName': 'createdate', 'direction': 'DESCENDING'}],
+            'properties': ['email', 'firstname', 'lastname', 'createdate', 'hs_object_id'],
+            'limit': limit
+        }
+        
+        success, data = make_hubspot_request('POST', url, headers, json_data=payload)
         
         if success:
             basic_contacts = data.get('results', [])
-            print(f"📊 Date filter: Found {len(basic_contacts)} contacts created in last {criteria.get('days_since_created', 'all')} days")
+            print(f"📊 Email domain filter: Found {len(basic_contacts)} contacts with domains {email_domains}")
             
             # Now fetch full contact data with all properties
             if basic_contacts:
@@ -87,15 +184,20 @@ class SelectiveSyncManager:
             else:
                 return basic_contacts
         else:
-            print(f"❌ Error fetching contacts: {data}")
+            print(f"❌ Error fetching contacts by email domains: {data}")
             return []
     
     def get_deals_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
         """Get deals based on various criteria ordered by creation date DESC (newest first)"""
         headers = get_api_headers(self.prod_token)
         
-        # Check if we need to use search API for date filtering
-        if 'days_since_created' in criteria:
+        # Priority 1: Specific deal IDs
+        if 'deal_ids' in criteria and criteria['deal_ids']:
+            print(f"📋 Fetching {len(criteria['deal_ids'])} specific deals by ID...")
+            return self._fetch_deals_by_ids(criteria['deal_ids'])
+        
+        # Priority 2: Date filtering
+        elif 'days_since_created' in criteria:
             from datetime import datetime, timedelta
             
             # Calculate the date threshold
@@ -120,6 +222,16 @@ class SelectiveSyncManager:
             }
             
             success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+            
+            if success:
+                deals = data.get('results', [])
+                print(f"📊 Date filter: Found {len(deals)} deals created in last {criteria.get('days_since_created', 'all')} days")
+                return deals
+            else:
+                print(f"❌ Error fetching deals by date: {data}")
+                return []
+        
+        # Priority 3: General query with limit
         else:
             # Use simple GET API with pagination, ordered by creation date descending
             url = 'https://api.hubapi.com/crm/v3/objects/deals'
@@ -131,14 +243,39 @@ class SelectiveSyncManager:
             }
             
             success, data = make_hubspot_request('GET', url, headers, params=params)
+            
+            if success:
+                deals = data.get('results', [])
+                print(f"📊 General query: Found {len(deals)} deals (limit: {criteria.get('limit', 50)})")
+                return deals
+            else:
+                print(f"❌ Error fetching deals: {data}")
+                return []
+    
+    def _fetch_deals_by_ids(self, deal_ids: List[str]) -> List[Dict]:
+        """Fetch specific deals by their IDs"""
+        deals = []
+        headers = get_api_headers(self.prod_token)
         
-        if success:
-            deals = data.get('results', [])
-            print(f"📊 Date filter: Found {len(deals)} deals created in last {criteria.get('days_since_created', 'all')} days")
-            return deals
-        else:
-            print(f"❌ Error fetching deals: {data}")
-            return []
+        for deal_id in deal_ids:
+            deal_url = f'https://api.hubapi.com/crm/v3/objects/deals/{deal_id}'
+            params = {
+                'properties': 'dealname,amount,pipeline,dealstage,createdate,hs_object_id',
+                'associations': 'contacts,companies'
+            }
+            
+            success, deal_data = make_hubspot_request('GET', deal_url, headers, params=params)
+            
+            if success:
+                deals.append(deal_data)
+                print(f"  ✅ Fetched deal {deal_id}")
+            else:
+                print(f"  ❌ Failed to fetch deal {deal_id}: {deal_data}")
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        print(f"📊 ID filter: Successfully fetched {len(deals)}/{len(deal_ids)} deals")
+        return deals
     
     def get_related_deals_for_contacts(self, contact_ids: List[str]) -> List[Dict]:
         """Get all deals associated with specific contacts"""
@@ -846,9 +983,93 @@ class SelectiveSyncManager:
     
     def _get_deal_id_mapping(self, prod_deal_ids: List[str]) -> Dict[str, str]:
         """Get mapping from production deal IDs to sandbox deal IDs"""
-        # This would need proper implementation based on deal matching logic
-        # For now, return empty mapping since deals are complex to match
-        return {}
+        mapping = {}
+        
+        prod_headers = get_api_headers(self.prod_token)
+        sandbox_headers = get_api_headers(self.sandbox_token)
+        
+        for prod_id in prod_deal_ids:
+            # Get deal details from production
+            prod_url = f'https://api.hubapi.com/crm/v3/objects/deals/{prod_id}'
+            success, prod_data = make_hubspot_request('GET', prod_url, prod_headers, params={'properties': 'dealname,amount,createdate'})
+            
+            if success:
+                deal_name = prod_data.get('properties', {}).get('dealname', '').strip()
+                amount = prod_data.get('properties', {}).get('amount')
+                
+                if deal_name:
+                    # Search for deal in sandbox by name and amount
+                    search_url = 'https://api.hubapi.com/crm/v3/objects/deals/search'
+                    
+                    # Primary filter: exact deal name match
+                    filters = [{
+                        'propertyName': 'dealname',
+                        'operator': 'EQ',
+                        'value': deal_name
+                    }]
+                    
+                    # Secondary filter: amount if available
+                    if amount:
+                        filters.append({
+                            'propertyName': 'amount',
+                            'operator': 'EQ',
+                            'value': amount
+                        })
+                    
+                    search_payload = {
+                        'filterGroups': [{'filters': filters}],
+                        'properties': ['dealname', 'amount', 'createdate'],
+                        'limit': 1
+                    }
+                    
+                    search_success, search_data = make_hubspot_request('POST', search_url, sandbox_headers, json_data=search_payload)
+                    
+                    if search_success:
+                        results = search_data.get('results', [])
+                        if results:
+                            sandbox_deal = results[0]
+                            sandbox_id = sandbox_deal['id']
+                            mapping[prod_id] = sandbox_id
+                            print(f"      🔗 Mapped deal '{deal_name}' ({prod_id} → {sandbox_id})")
+                        else:
+                            # Try fuzzy matching by name only if exact match failed
+                            name_only_filters = [{
+                                'propertyName': 'dealname',
+                                'operator': 'CONTAINS_TOKEN',
+                                'value': deal_name
+                            }]
+                            
+                            fuzzy_payload = {
+                                'filterGroups': [{'filters': name_only_filters}],
+                                'properties': ['dealname', 'amount', 'createdate'],
+                                'limit': 5  # Get top 5 potential matches
+                            }
+                            
+                            fuzzy_success, fuzzy_data = make_hubspot_request('POST', search_url, sandbox_headers, json_data=fuzzy_payload)
+                            
+                            if fuzzy_success:
+                                fuzzy_results = fuzzy_data.get('results', [])
+                                # Take the first fuzzy match if available
+                                if fuzzy_results:
+                                    best_match = fuzzy_results[0]
+                                    sandbox_id = best_match['id']
+                                    mapping[prod_id] = sandbox_id
+                                    print(f"      🔗 Fuzzy mapped deal '{deal_name}' ({prod_id} → {sandbox_id})")
+                                else:
+                                    print(f"      ❌ No match found for deal '{deal_name}' ({prod_id})")
+                            else:
+                                print(f"      ❌ Fuzzy search failed for deal '{deal_name}' ({prod_id})")
+                    else:
+                        print(f"      ❌ Search failed for deal '{deal_name}' ({prod_id}): {search_data}")
+                else:
+                    print(f"      ⚠️  Deal {prod_id} has no name, skipping mapping")
+            else:
+                print(f"      ❌ Failed to fetch production deal {prod_id}: {prod_data}")
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        print(f"    📋 Deal mapping: {len(mapping)}/{len(prod_deal_ids)} deals mapped")
+        return mapping
     
     def _get_company_id_mapping(self, prod_company_ids: List[str]) -> Dict[str, str]:
         """Get mapping from production company IDs to sandbox company IDs"""

@@ -222,8 +222,8 @@ def handle_selective_sync(config, args, logger):
     if args.email_domains:
         criteria['email_domains'] = [domain.strip() for domain in args.email_domains.split(',')]
     
-    # Set a reasonable limit if not specified
-    if 'limit' not in criteria:
+    # Set a reasonable limit if not specified and no specific IDs provided
+    if 'limit' not in criteria and not criteria.get('contact_ids') and not criteria.get('deal_ids'):
         criteria['limit'] = args.limit if args.limit else 50  # Use command line limit or default
     
     if args.selective_contacts:
