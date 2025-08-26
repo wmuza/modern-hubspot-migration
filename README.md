@@ -1,6 +1,6 @@
 # HubSpot Migration Tool - Enterprise-Grade Data Migration Between HubSpot Accounts
 
-**Want to copy your contacts, companies, deals, and tickets from one HubSpot account to another?** This tool does it automatically with professional-grade features!
+**Want to copy your contacts, companies, deals, tickets, and custom objects from one HubSpot account to another?** This tool does it automatically with professional-grade features!
 
 ## 🎯 What's New (v2.0)
 
@@ -24,6 +24,12 @@
 - Preserves ticket properties and categories
 - Maintains ticket priorities and assignments
 
+**🔧 Custom Object Migration** - Enterprise-grade advanced features:
+- Automatically detects any custom object types
+- Migrates custom object schemas and properties
+- Handles complex custom data structures
+- Universal framework works with any custom object
+
 ## What This Tool Does
 
 This tool helps you copy data from one HubSpot account (like your main business account) to another HubSpot account (like a testing or backup account). It's like copying files from one folder to another, but for your HubSpot data.
@@ -33,8 +39,9 @@ This tool helps you copy data from one HubSpot account (like your main business 
 - 🏢 **All your companies** (businesses, organizations)  
 - 💼 **All your deals** (sales opportunities, quotes)
 - 🎫 **All your tickets** (support requests, issues)
+- 🔧 **All your custom objects** (projects, assets, contracts, etc.)
 - 📊 **Pipelines and stages** (your sales and support processes)
-- 🔗 **All connections** between contacts, companies, deals, and tickets
+- 🔗 **All connections** between all object types
 - 📝 **All custom information fields** you've created
 
 **Advanced Features:**
@@ -179,7 +186,7 @@ python migrate.py --limit 5
 When you're ready to copy all your data:
 
 ```bash
-# Copy all contacts, companies, deals, and tickets
+# Copy all contacts, companies, deals, tickets, and custom objects
 python migrate.py
 
 # Copy only contacts and their related data
@@ -190,6 +197,9 @@ python migrate.py --deals-only
 
 # Copy only tickets and their related data
 python migrate.py --tickets-only
+
+# Copy only custom objects and their data
+python migrate.py --custom-objects-only
 ```
 
 ### Advanced Features
@@ -331,7 +341,7 @@ A: All migrations fetch the **most recently created records first** (sorted by c
 
 ### Basic Migration Commands
 ```bash
-# Full migration (contacts, companies, deals, tickets, associations)
+# Full migration (contacts, companies, deals, tickets, custom objects, associations)
 python migrate.py
 
 # Test mode - preview without changes
@@ -355,11 +365,17 @@ python migrate.py --deals-only
 # Migrate only tickets and pipelines
 python migrate.py --tickets-only
 
+# Migrate only custom objects
+python migrate.py --custom-objects-only
+
 # Skip deal migration
 python migrate.py --skip-deals
 
 # Skip ticket migration
 python migrate.py --skip-tickets
+
+# Skip custom object migration
+python migrate.py --skip-custom-objects
 
 # Skip property migration
 python migrate.py --skip-properties

@@ -44,6 +44,7 @@ from migrations.deal_association_migrator import migrate_deal_associations
 from migrations.ticket_property_migrator import migrate_ticket_properties
 from migrations.ticket_pipeline_migrator import migrate_ticket_pipelines
 from migrations.ticket_migrator import migrate_tickets
+from migrations.custom_object_migrator import migrate_custom_objects
 from core.selective_sync import SelectiveSyncManager
 from core.rollback_manager import RollbackManager
 from validators.verify_company_properties import verify_company_data
@@ -76,6 +77,10 @@ def parse_arguments():
                        help='Migrate only tickets (skip contacts, companies, and deals)')
     parser.add_argument('--skip-tickets', action='store_true',
                        help='Skip ticket migration steps')
+    parser.add_argument('--custom-objects-only', action='store_true',
+                       help='Migrate only custom objects (skip all standard objects)')
+    parser.add_argument('--skip-custom-objects', action='store_true',
+                       help='Skip custom object migration steps')
     
     # Selective Sync Options
     parser.add_argument('--selective-contacts', action='store_true',
@@ -286,7 +291,7 @@ def run_migration(config, args, logger):
     
     try:
         # Step 1: Company Property Migration
-        if not args.skip_properties and not args.tickets_only:
+        if not args.skip_properties and not args.tickets_only and not args.custom_objects_only:
             print("🏢 STEP 1: COMPANY PROPERTY MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -300,7 +305,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 2: Contact Migration
-        if not args.deals_only and not args.tickets_only:
+        if not args.deals_only and not args.tickets_only and not args.custom_objects_only:
             print("👥 STEP 2: CONTACT MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -315,7 +320,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 3: Association Migration
-        if not args.contacts_only and not args.deals_only and not args.tickets_only:
+        if not args.contacts_only and not args.deals_only and not args.tickets_only and not args.custom_objects_only:
             print("🔗 STEP 3: ASSOCIATION MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -334,7 +339,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 4: Deal Migration
-        if not args.skip_deals and not args.contacts_only and not args.tickets_only:
+        if not args.skip_deals and not args.contacts_only and not args.tickets_only and not args.custom_objects_only:
             print("💼 STEP 4: DEAL MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -365,7 +370,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 5: Ticket Migration (or Step 1 if tickets-only)
-        if (not args.skip_tickets and not args.contacts_only and not args.deals_only) or args.tickets_only:
+        if ((not args.skip_tickets and not args.contacts_only and not args.deals_only and not args.custom_objects_only) or args.tickets_only):
             print("🎫 STEP 5: TICKET MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -390,9 +395,20 @@ def run_migration(config, args, logger):
                 print()
             print()
         
-        # Step 6: Verification
+        # Step 6: Custom Object Migration (Advanced)
+        if (not args.skip_custom_objects and not args.contacts_only and not args.deals_only and not args.tickets_only) or args.custom_objects_only:
+            print("🔧 STEP 6: CUSTOM OBJECT MIGRATION")
+            print("=" * 60)
+            if args.dry_run:
+                print("🌙 Dry run: Would analyze and migrate any custom objects")
+            else:
+                custom_obj_results = migrate_custom_objects(migration_config['contact_limit'])
+                migration_results['custom_objects'] = custom_obj_results
+            print()
+        
+        # Step 7: Verification
         if not args.dry_run:
-            print("✅ STEP 6: DATA VERIFICATION")
+            print("✅ STEP 7: DATA VERIFICATION")
             print("=" * 60)
             verify_company_data()
             print()

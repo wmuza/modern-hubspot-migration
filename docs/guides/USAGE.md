@@ -41,11 +41,17 @@ python migrate.py --deals-only
 # Migrate only tickets and pipelines
 python migrate.py --tickets-only
 
+# Migrate only custom objects and their data
+python migrate.py --custom-objects-only
+
 # Skip deal migration
 python migrate.py --skip-deals
 
 # Skip ticket migration
 python migrate.py --skip-tickets
+
+# Skip custom object migration
+python migrate.py --skip-custom-objects
 
 # Skip property migration (if already done)
 python migrate.py --skip-properties
@@ -148,7 +154,21 @@ python src/migrations/ticket_migrator.py
 python migrate.py --tickets-only
 ```
 
-### 6. Association Migration
+### 6. Custom Object Migration (NEW!)
+Migrate any HubSpot custom objects with universal system:
+
+```bash
+# Analyze all custom objects in both environments
+python src/utils/custom_object_analyzer.py
+
+# Run custom object migration (all types)
+python src/migrations/custom_object_migrator.py
+
+# Or migrate only custom objects with all steps
+python migrate.py --custom-objects-only
+```
+
+### 7. Association Migration
 Migrate relationships between objects:
 
 ```bash
@@ -159,7 +179,7 @@ python src/migrations/enterprise_association_migrator.py
 python src/migrations/deal_association_migrator.py
 ```
 
-### 7. Verification
+### 8. Verification
 Verify data integrity after migration:
 
 ```bash
@@ -233,6 +253,8 @@ python migrate.py --config examples/configs/small-batch-test.ini --verbose
 - 🏢 **Property Migration**: Creates custom properties
 - 👥 **Contact Migration**: Migrates contact records (newest first)
 - 💼 **Deal Migration**: Migrates deal records (newest first)
+- 🎫 **Ticket Migration**: Migrates ticket records (newest first)
+- 🔧 **Custom Object Migration**: Migrates any custom object types (newest first)
 - 🔗 **Association Migration**: Creates relationships
 - ✅ **Verification**: Validates data integrity
 - 📊 **Summary**: Final results and statistics
@@ -340,6 +362,12 @@ python src/utils/debug_contacts.py
 Analyze property compatibility:
 ```bash
 python src/validators/verify_company_properties.py
+```
+
+### Custom Object Analysis
+Analyze custom objects in both environments:
+```bash
+python src/utils/custom_object_analyzer.py
 ```
 
 ## Support
