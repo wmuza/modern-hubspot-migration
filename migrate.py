@@ -41,6 +41,9 @@ from migrations.deal_property_migrator import migrate_deal_properties
 from migrations.deal_pipeline_migrator import migrate_deal_pipelines
 from migrations.deal_migrator import migrate_deals
 from migrations.deal_association_migrator import migrate_deal_associations
+from migrations.ticket_property_migrator import migrate_ticket_properties
+from migrations.ticket_pipeline_migrator import migrate_ticket_pipelines
+from migrations.ticket_migrator import migrate_tickets
 from core.selective_sync import SelectiveSyncManager
 from core.rollback_manager import RollbackManager
 from validators.verify_company_properties import verify_company_data
@@ -69,6 +72,10 @@ def parse_arguments():
                        help='Migrate only deals (skip contacts and companies)')
     parser.add_argument('--skip-deals', action='store_true',
                        help='Skip deal migration steps')
+    parser.add_argument('--tickets-only', action='store_true',
+                       help='Migrate only tickets (skip contacts, companies, and deals)')
+    parser.add_argument('--skip-tickets', action='store_true',
+                       help='Skip ticket migration steps')
     
     # Selective Sync Options
     parser.add_argument('--selective-contacts', action='store_true',
@@ -279,7 +286,7 @@ def run_migration(config, args, logger):
     
     try:
         # Step 1: Company Property Migration
-        if not args.skip_properties:
+        if not args.skip_properties and not args.tickets_only:
             print("🏢 STEP 1: COMPANY PROPERTY MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -293,7 +300,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 2: Contact Migration
-        if not args.deals_only:
+        if not args.deals_only and not args.tickets_only:
             print("👥 STEP 2: CONTACT MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -308,7 +315,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 3: Association Migration
-        if not args.contacts_only and not args.deals_only:
+        if not args.contacts_only and not args.deals_only and not args.tickets_only:
             print("🔗 STEP 3: ASSOCIATION MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -327,7 +334,7 @@ def run_migration(config, args, logger):
             print()
         
         # Step 4: Deal Migration
-        if not args.skip_deals and not args.contacts_only:
+        if not args.skip_deals and not args.contacts_only and not args.tickets_only:
             print("💼 STEP 4: DEAL MIGRATION")
             print("=" * 60)
             if args.dry_run:
@@ -357,9 +364,35 @@ def run_migration(config, args, logger):
                 migration_results['deal_associations'] = deal_assoc_results
             print()
         
-        # Step 5: Verification
+        # Step 5: Ticket Migration (or Step 1 if tickets-only)
+        if (not args.skip_tickets and not args.contacts_only and not args.deals_only) or args.tickets_only:
+            print("🎫 STEP 5: TICKET MIGRATION")
+            print("=" * 60)
+            if args.dry_run:
+                print("🌙 Dry run: Would migrate ticket properties, pipelines, and tickets")
+            else:
+                # Step 5a: Ticket Properties
+                print("🔧 5a. Ticket Properties Migration")
+                ticket_prop_results = migrate_ticket_properties()
+                migration_results['ticket_properties'] = ticket_prop_results
+                print()
+                
+                # Step 5b: Ticket Pipelines
+                print("📊 5b. Ticket Pipeline Migration")
+                ticket_pipeline_results = migrate_ticket_pipelines()
+                migration_results['ticket_pipelines'] = ticket_pipeline_results
+                print()
+                
+                # Step 5c: Ticket Objects
+                print("🎫 5c. Ticket Object Migration")
+                ticket_results = migrate_tickets(migration_config['contact_limit'])
+                migration_results['tickets'] = ticket_results
+                print()
+            print()
+        
+        # Step 6: Verification
         if not args.dry_run:
-            print("✅ STEP 5: DATA VERIFICATION")
+            print("✅ STEP 6: DATA VERIFICATION")
             print("=" * 60)
             verify_company_data()
             print()
