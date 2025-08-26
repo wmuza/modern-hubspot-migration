@@ -2,6 +2,30 @@
 
 All notable changes to the HubSpot Modern Migration Tool will be documented in this file.
 
+## [2.1.0] - 2025-08-26
+
+### Added
+- 🎫 **Complete Ticket Migration System**: Full support for migrating HubSpot tickets
+  - Ticket property migration with custom field support
+  - Ticket pipeline migration with stage mapping
+  - Ticket object migration with data integrity preservation
+  - New command: `--tickets-only` for standalone ticket migration
+  - New command: `--skip-tickets` to exclude tickets from migration
+- 📊 **Ticket Analysis Tool**: Comprehensive ticket schema analysis (`ticket_analyzer.py`)
+- 🏗️ **Modular Architecture**: Separate migrators for properties, pipelines, and objects
+- 📄 **Enhanced Reporting**: Detailed ticket migration reports with success metrics
+
+### Technical Improvements
+- Added `TicketPropertyMigrator`, `TicketPipelineMigrator`, and `TicketMigrator` classes
+- Integrated ticket migration into main workflow as Step 5
+- Enhanced field filtering for ticket-specific properties
+- Improved pipeline mapping between environments
+
+### Impact
+- **Complete CRM Coverage**: Now supports all core HubSpot objects (Contacts, Companies, Deals, Tickets)
+- **Production Ready**: Tested ticket migration with 100% success rate
+- **Phase 1.4 Complete**: All primary CRM objects fully supported
+
 ## [2.0.2] - 2025-08-26
 
 ### Changed

@@ -38,8 +38,14 @@ python migrate.py --contacts-only
 # Migrate only deals and pipelines
 python migrate.py --deals-only
 
+# Migrate only tickets and pipelines
+python migrate.py --tickets-only
+
 # Skip deal migration
 python migrate.py --skip-deals
+
+# Skip ticket migration
+python migrate.py --skip-tickets
 
 # Skip property migration (if already done)
 python migrate.py --skip-properties
@@ -125,7 +131,24 @@ python src/migrations/deal_pipeline_migrator.py
 python src/migrations/deal_migrator.py
 ```
 
-### 5. Association Migration
+### 5. Ticket Migration (NEW!)
+Migrate tickets with pipelines and properties:
+
+```bash
+# Run ticket property migration
+python src/migrations/ticket_property_migrator.py
+
+# Run ticket pipeline migration
+python src/migrations/ticket_pipeline_migrator.py
+
+# Run ticket object migration
+python src/migrations/ticket_migrator.py
+
+# Or migrate only tickets with all steps
+python migrate.py --tickets-only
+```
+
+### 6. Association Migration
 Migrate relationships between objects:
 
 ```bash
@@ -136,7 +159,7 @@ python src/migrations/enterprise_association_migrator.py
 python src/migrations/deal_association_migrator.py
 ```
 
-### 6. Verification
+### 7. Verification
 Verify data integrity after migration:
 
 ```bash
