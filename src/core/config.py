@@ -8,6 +8,11 @@ import configparser
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
+import sys
+
+# Add parent directory to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils.utils import validate_hubspot_token
 
 class SecureConfig:
     """Secure configuration loader with validation and safety checks"""
@@ -72,19 +77,33 @@ class SecureConfig:
             if not self.config.has_section(section):
                 raise ValueError(f"Missing required configuration section: [{section}]")
         
-        # Check required HubSpot tokens
+        # Check required HubSpot tokens with enhanced validation
         required_tokens = ['production_token', 'sandbox_token']
-        for token in required_tokens:
-            value = self.config.get('hubspot', token, fallback='')
-            if not value or value.startswith('your-'):
+        for token_name in required_tokens:
+            token_value = self.config.get('hubspot', token_name, fallback='')
+            
+            if not token_value:
                 raise ValueError(
-                    f"Please configure your {token} in {self.config_file}. "
+                    f"Missing {token_name} in {self.config_file}. "
                     f"Get your tokens from HubSpot Private App settings."
                 )
             
-            # Validate token format
-            if not value.startswith('pat-'):
-                logging.warning(f"{token} doesn't appear to be a Private App token (should start with 'pat-')")
+            # Use the new validation function
+            is_valid, validation_message = validate_hubspot_token(token_value)
+            if not is_valid:
+                raise ValueError(f"Invalid {token_name}: {validation_message}")
+            
+            logging.info(f"{token_name} validation: {validation_message}")
+        
+        # Validate migration settings
+        migration_limit = self.config.getint('migration', 'contact_limit', fallback=50)
+        if migration_limit > 10000:
+            logging.warning(f"Very high contact limit ({migration_limit}). Consider using smaller batches.")
+        
+        # Validate rate limiting settings
+        rate_limit = self.config.getfloat('migration', 'rate_limit_delay', fallback=0.3)
+        if rate_limit < 0.1:
+            logging.warning(f"Very low rate limit delay ({rate_limit}s) may cause API rate limiting issues.")
     
     def get_hubspot_config(self) -> Dict[str, str]:
         """Get HubSpot API configuration"""

@@ -1,0 +1,62 @@
+{
+  "name": "HubSpot Modern Migration Tool",
+  "description": "Enterprise-grade HubSpot data migration tool with selective sync and rollback capabilities",
+  "version": "2.0.0",
+  "language": "python",
+  "framework": "hubspot-api",
+  "mcpServers": {
+    "context-7": {
+      "command": "npx",
+      "args": ["@context-labs/context-server"],
+      "env": {
+        "CONTEXT_API_KEY": "${CONTEXT_API_KEY}"
+      },
+      "initializationOptions": {
+        "projectPath": ".",
+        "indexFiles": [
+          "src/**/*.py",
+          "migrate.py",
+          "config/*.ini",
+          "docs/**/*.md"
+        ],
+        "ignorePaths": [
+          "logs/",
+          "reports/",
+          "__pycache__/",
+          ".git/",
+          "*.pyc"
+        ]
+      }
+    }
+  },
+  "environment": {
+    "python": {
+      "version": ">=3.8",
+      "virtualenv": true,
+      "requirements": "requirements.txt"
+    }
+  },
+  "scripts": {
+    "test": "python migrate.py --dry-run --limit 5",
+    "validate": "python -c \"from src.core.config import load_config; load_config()\"",
+    "migrate": "python migrate.py",
+    "selective": "python migrate.py --selective-contacts --days-since-created 7",
+    "rollback": "python migrate.py --show-rollback-options"
+  },
+  "documentation": {
+    "readme": "README.md",
+    "guides": "docs/guides/",
+    "planning": "docs/planning/",
+    "changelog": "CHANGELOG.md"
+  },
+  "security": {
+    "sensitiveFiles": [
+      "config/config.ini",
+      ".env"
+    ],
+    "requiredEnvVars": [
+      "HUBSPOT_PROD_API_KEY",
+      "HUBSPOT_SANDBOX_API_KEY"
+    ]
+  }
+}

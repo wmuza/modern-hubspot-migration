@@ -12,6 +12,7 @@ from utils.utils import load_env_config, get_api_headers, make_hubspot_request
 from migrations.contact_migration import migrate_contacts
 from migrations.deal_migrator import DealMigrator
 from migrations.deal_association_migrator import DealAssociationMigrator
+from core.field_filters import HubSpotFieldFilter
 import time
 import json
 from datetime import datetime, timedelta
@@ -654,10 +655,42 @@ class SelectiveSyncManager:
         print(f"✅ Found {len(related_companies)} related companies")
         self.sync_metadata['related_objects']['companies'] = company_ids
         
+        # Step 4: Migrate companies first (so they exist for associations)
+        print("\n🏢 Migrating related companies...")
+        companies_migrated = 0
+        if related_companies:
+            companies_migrated = self._migrate_specific_companies(related_companies)
+        
+        # Step 5: Migrate contacts
+        print("\n👥 Migrating related contacts...")
+        contacts_migrated = 0
+        if related_contacts:
+            contacts_migrated = self._migrate_specific_contacts(related_contacts)
+        
+        # Step 6: Migrate target deals
+        print("\n💼 Migrating target deals...")
+        deals_migrated = 0
+        deal_id_mapping = {}
+        if target_deals:
+            deals_migrated, deal_id_mapping = self._migrate_specific_deals(target_deals)
+        
+        # Step 7: Create associations
+        print("🔗 Creating associations...")
+        associations_created = 0
+        
+        # Add delay to allow HubSpot to index the newly created records
+        if contacts_migrated > 0 or deals_migrated > 0:
+            print("  ⏳ Waiting for HubSpot to index new records...")
+            time.sleep(3)  # 3 second delay for indexing
+        
+        if deal_ids and (contact_ids or company_ids):
+            associations_created = self._create_selective_associations(contact_ids, deal_ids, company_ids, deal_id_mapping)
+        
         results = {
-            'deals_synced': len(target_deals),
-            'contacts_synced': len(related_contacts),
-            'companies_synced': len(related_companies),
+            'deals_synced': deals_migrated,
+            'contacts_synced': contacts_migrated,
+            'companies_synced': companies_migrated,
+            'associations_created': associations_created,
             'sync_metadata': self.sync_metadata
         }
         
@@ -739,7 +772,10 @@ class SelectiveSyncManager:
                             
                             # Verify and fix properties
                             time.sleep(0.5)  # Brief delay before verification
-                            self._verify_and_fix_contact_properties(existing_id, contact)
+                            try:
+                                self._verify_and_fix_contact_properties(existing_id, contact)
+                            except Exception as e:
+                                print(f"      ⚠️  Property verification failed: {str(e)}")
                     else:
                         # Create new contact
                         success, new_id = create_contact_in_sandbox(self.sandbox_token, contact, filter_system)
@@ -749,7 +785,10 @@ class SelectiveSyncManager:
                             
                             # Verify and fix properties
                             time.sleep(0.5)  # Brief delay before verification
-                            self._verify_and_fix_contact_properties(new_id, contact)
+                            try:
+                                self._verify_and_fix_contact_properties(new_id, contact)
+                            except Exception as e:
+                                print(f"      ⚠️  Property verification failed: {str(e)}")
                         else:
                             print(f"      ❌ Failed to create contact: {new_id}")
                 else:
@@ -764,7 +803,10 @@ class SelectiveSyncManager:
                         
                         # Verify and fix properties
                         time.sleep(0.5)  # Brief delay before verification
-                        self._verify_and_fix_contact_properties(new_id, contact)
+                        try:
+                            self._verify_and_fix_contact_properties(new_id, contact)
+                        except Exception as e:
+                            print(f"      ⚠️  Property verification failed: {str(e)}")
                     else:
                         print(f"      ❌ Failed to create contact: {new_id}")
             
@@ -783,36 +825,74 @@ class SelectiveSyncManager:
         migrated_count = 0
         headers = get_api_headers(self.sandbox_token)
         
+        # Enhanced in-memory cache to track companies processed in this batch
+        processed_companies = {}  # normalized_key -> company_id
+        
         try:
             for i, company in enumerate(companies, 1):
                 company_props = company.get('properties', {})
                 domain = (company_props.get('domain') or '').strip()
                 name = (company_props.get('name') or '').strip()
+                phone = (company_props.get('phone') or '').strip()
                 
-                print(f"    🏢 {name or 'Unnamed Company'} ({domain or 'no domain'})")
+                print(f"    🏢 [{i}/{len(companies)}] {name or 'Unnamed Company'} ({domain or 'no domain'})")
                 
-                # Check if company already exists in sandbox
-                existing_company_id = None
-                if domain:
-                    existing_company_id = self._find_company_by_domain(domain)
-                elif name:
-                    existing_company_id = self._find_company_by_name(name)
+                # Create multiple cache keys for better duplicate detection
+                cache_keys = self._generate_company_cache_keys(name, domain, phone)
+                existing_batch_id = None
+                
+                # Check if we already processed this company in this batch using any cache key
+                for cache_key in cache_keys:
+                    if cache_key in processed_companies:
+                        existing_batch_id = processed_companies[cache_key]
+                        print(f"      🔄 Already processed in this batch (ID: {existing_batch_id}, key: {cache_key[:50]})")
+                        break
+                
+                if existing_batch_id:
+                    migrated_count += 1
+                    continue
+                
+                # Enhanced duplicate detection - check multiple criteria
+                print(f"      🔍 Searching for existing company: '{name}' (domain: '{domain}')")
+                existing_company_id = self._find_existing_company(domain, name, company_props)
                 
                 if existing_company_id:
                     print(f"      🔄 Company already exists (ID: {existing_company_id})")
+                    # Update existing company with all properties
+                    success = self._update_company_properties(existing_company_id, company)
+                    if success:
+                        print(f"      ✅ Updated company properties")
+                    
+                    # Also verify properties for existing companies
+                    time.sleep(0.5)
+                    self._verify_and_fix_company_properties(existing_company_id, company)
+                    
+                    # Cache this result for all possible keys
+                    for cache_key in cache_keys:
+                        processed_companies[cache_key] = existing_company_id
                     migrated_count += 1
                 else:
-                    # Create new company
+                    print(f"      ➕ No existing company found, creating new one")
+                    # Create new company with all properties
                     success, new_company_id = self._create_company_in_sandbox(company)
                     if success:
                         print(f"      ✅ Created new company (ID: {new_company_id})")
                         migrated_count += 1
+                        
+                        # Cache the new company ID for all possible keys
+                        for cache_key in cache_keys:
+                            processed_companies[cache_key] = new_company_id
+                        
+                        # Verify and fix properties like we do for contacts
+                        time.sleep(0.5)  # Brief delay before verification
+                        self._verify_and_fix_company_properties(new_company_id, company)
                     else:
                         print(f"      ❌ Failed to create company: {new_company_id}")
                 
                 time.sleep(0.2)  # Rate limiting
             
             print(f"  ✅ Successfully migrated {migrated_count}/{len(companies)} companies")
+            print(f"  📋 Batch cache entries: {len(processed_companies)}")
             
         except Exception as e:
             print(f"  ❌ Company migration failed: {str(e)}")
@@ -870,20 +950,13 @@ class SelectiveSyncManager:
         return None
     
     def _create_company_in_sandbox(self, company: Dict[str, Any]) -> tuple[bool, str]:
-        """Create a new company in sandbox"""
+        """Create a new company in sandbox with comprehensive properties"""
         headers = get_api_headers(self.sandbox_token)
         url = 'https://api.hubapi.com/crm/v3/objects/companies'
         
-        # Filter properties to only include safe ones
+        # Use comprehensive company properties
         company_props = company.get('properties', {})
-        
-        # Common company properties that are usually safe
-        safe_company_props = {}
-        safe_fields = ['name', 'domain', 'city', 'state', 'country', 'industry', 'phone', 'website']
-        
-        for field in safe_fields:
-            if field in company_props and company_props[field]:
-                safe_company_props[field] = company_props[field]
+        safe_company_props = self._get_safe_company_properties(company_props)
         
         if not safe_company_props:
             return False, "No safe properties to migrate"
@@ -1012,6 +1085,386 @@ class SelectiveSyncManager:
         else:
             error_msg = data.get('error', str(data)) if isinstance(data, dict) else str(data)
             return False, error_msg
+    
+    def _find_existing_company(self, domain: str, name: str, company_props: Dict[str, Any]) -> Optional[str]:
+        """Enhanced company duplicate detection using multiple criteria with improved accuracy"""
+        
+        # Normalize domain for better matching
+        normalized_domain = self._normalize_domain(domain) if domain else None
+        
+        # Try domain first (most reliable) - use normalized domain
+        if normalized_domain:
+            print(f"        🔍 Checking normalized domain: '{normalized_domain}'")
+            company_id = self._find_company_by_domain(normalized_domain)
+            if company_id:
+                print(f"        ✅ Found by domain: {company_id}")
+                return company_id
+            print(f"        ❌ No match by domain")
+        
+        # Try exact name match (case-insensitive, trimmed)
+        if name and len(name.strip()) > 2:
+            normalized_name = name.strip()
+            print(f"        🔍 Checking exact name: '{normalized_name}'")
+            company_id = self._find_company_by_name(normalized_name)
+            if company_id:
+                print(f"        ✅ Found by exact name: {company_id}")
+                return company_id
+            print(f"        ❌ No match by exact name")
+        
+        # Try phone match (normalize phone numbers)
+        phone = (company_props.get('phone') or '').strip()
+        normalized_phone = self._normalize_phone(phone) if phone else None
+        if normalized_phone:
+            print(f"        🔍 Checking normalized phone: '{normalized_phone}'")
+            company_id = self._find_company_by_phone(normalized_phone)
+            if company_id:
+                print(f"        ✅ Found by phone: {company_id}")
+                return company_id
+            print(f"        ❌ No match by phone")
+        
+        # Only try fuzzy matching for substantial names and as last resort
+        if name and len(name.strip()) > 10:  # Only for longer, more distinctive names
+            print(f"        🔍 Checking fuzzy name match: '{name.strip()}'")
+            company_id = self._find_company_by_fuzzy_name(name.strip())
+            if company_id:
+                print(f"        ✅ Found by fuzzy name: {company_id}")
+                return company_id
+            print(f"        ❌ No match by fuzzy name")
+        
+        print(f"        ❌ No existing company found with any criteria")
+        return None
+    
+    def _find_company_by_fuzzy_name(self, name: str) -> Optional[str]:
+        """Find company by intelligent partial name match with similarity scoring"""
+        headers = get_api_headers(self.sandbox_token)
+        search_url = 'https://api.hubapi.com/crm/v3/objects/companies/search'
+        
+        # Extract key terms from company name (remove common words)
+        key_terms = self._extract_company_key_terms(name)
+        if not key_terms:
+            return None
+        
+        # Use the most significant term for search
+        search_term = key_terms[0]
+        
+        search_payload = {
+            'filterGroups': [{
+                'filters': [{
+                    'propertyName': 'name',
+                    'operator': 'CONTAINS_TOKEN',
+                    'value': search_term
+                }]
+            }],
+            'properties': ['domain', 'name', 'phone'],
+            'limit': 10  # Get more matches for better evaluation
+        }
+        
+        success, search_data = make_hubspot_request('POST', search_url, headers, json_data=search_payload)
+        
+        if success:
+            results = search_data.get('results', [])
+            if results:
+                # Score matches based on similarity
+                best_match = self._find_best_company_match(name, results)
+                if best_match:
+                    result_name = best_match.get('properties', {}).get('name', 'Unknown')
+                    print(f"        🎯 Best fuzzy match: '{result_name}' (similarity score applied)")
+                    return best_match['id']
+        
+        return None
+    
+    def _generate_company_cache_keys(self, name: str, domain: str, phone: str) -> List[str]:
+        """Generate multiple cache keys for robust duplicate detection"""
+        keys = []
+        
+        # Normalize inputs
+        normalized_name = name.strip().lower() if name else ""
+        normalized_domain = self._normalize_domain(domain) if domain else ""
+        normalized_phone = self._normalize_phone(phone) if phone else ""
+        
+        # Primary key: name + domain
+        if normalized_name or normalized_domain:
+            keys.append(f"name_domain:{normalized_name}|{normalized_domain}")
+        
+        # Domain-only key (if domain exists)
+        if normalized_domain:
+            keys.append(f"domain:{normalized_domain}")
+        
+        # Name-only key (if name is substantial)
+        if normalized_name and len(normalized_name) > 3:
+            keys.append(f"name:{normalized_name}")
+        
+        # Phone-only key (if phone exists)
+        if normalized_phone:
+            keys.append(f"phone:{normalized_phone}")
+        
+        return keys
+    
+    def _normalize_domain(self, domain: str) -> str:
+        """Normalize domain for consistent matching"""
+        if not domain:
+            return ""
+        
+        # Remove protocol and www
+        normalized = domain.lower().strip()
+        normalized = normalized.replace('http://', '').replace('https://', '')
+        normalized = normalized.replace('www.', '')
+        
+        # Remove trailing slash and path
+        normalized = normalized.split('/')[0]
+        
+        # Remove port numbers
+        normalized = normalized.split(':')[0]
+        
+        return normalized
+    
+    def _normalize_phone(self, phone: str) -> str:
+        """Normalize phone number for consistent matching"""
+        if not phone:
+            return ""
+        
+        # Remove all non-digit characters
+        digits_only = ''.join(filter(str.isdigit, phone))
+        
+        # For US numbers, remove leading 1 if present and length is 11
+        if len(digits_only) == 11 and digits_only.startswith('1'):
+            digits_only = digits_only[1:]
+        
+        return digits_only
+    
+    def _extract_company_key_terms(self, name: str) -> List[str]:
+        """Extract key terms from company name for fuzzy matching"""
+        if not name:
+            return []
+        
+        # Common words to ignore in company names
+        stop_words = {
+            'inc', 'llc', 'ltd', 'corp', 'corporation', 'company', 'co', 'group', 
+            'the', 'and', 'of', 'for', 'in', 'on', 'at', 'to', 'a', 'an', 'is', 'are',
+            'services', 'service', 'solutions', 'enterprises', 'international', 'global'
+        }
+        
+        # Split name into words and filter
+        words = name.lower().replace(',', '').replace('.', '').split()
+        key_terms = [word for word in words if len(word) > 2 and word not in stop_words]
+        
+        # Sort by length (longer terms are usually more distinctive)
+        key_terms.sort(key=len, reverse=True)
+        
+        return key_terms[:3]  # Return top 3 most distinctive terms
+    
+    def _find_best_company_match(self, target_name: str, candidates: List[Dict]) -> Optional[Dict]:
+        """Find the best matching company using similarity scoring"""
+        if not candidates:
+            return None
+        
+        target_normalized = target_name.lower().strip()
+        best_score = 0
+        best_match = None
+        
+        for candidate in candidates:
+            candidate_name = candidate.get('properties', {}).get('name', '')
+            if not candidate_name:
+                continue
+            
+            candidate_normalized = candidate_name.lower().strip()
+            
+            # Calculate similarity score
+            score = self._calculate_company_similarity(target_normalized, candidate_normalized)
+            
+            # Require minimum 70% similarity for fuzzy matches
+            if score > 0.7 and score > best_score:
+                best_score = score
+                best_match = candidate
+        
+        return best_match
+    
+    def _calculate_company_similarity(self, name1: str, name2: str) -> float:
+        """Calculate similarity score between two company names (0.0 to 1.0)"""
+        if not name1 or not name2:
+            return 0.0
+        
+        # Exact match
+        if name1 == name2:
+            return 1.0
+        
+        # Check if one is contained in the other
+        if name1 in name2 or name2 in name1:
+            shorter = min(len(name1), len(name2))
+            longer = max(len(name1), len(name2))
+            return shorter / longer * 0.9  # High score but not perfect
+        
+        # Simple token-based similarity
+        tokens1 = set(name1.split())
+        tokens2 = set(name2.split())
+        
+        if not tokens1 or not tokens2:
+            return 0.0
+        
+        intersection = len(tokens1.intersection(tokens2))
+        union = len(tokens1.union(tokens2))
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def _find_company_by_phone(self, phone: str) -> Optional[str]:
+        """Find company by normalized phone number"""
+        if not phone:
+            return None
+            
+        headers = get_api_headers(self.sandbox_token)
+        search_url = 'https://api.hubapi.com/crm/v3/objects/companies/search'
+        
+        # Try both original and normalized phone formats
+        phone_variants = [phone, self._normalize_phone(phone)]
+        phone_variants = list(set([p for p in phone_variants if p]))  # Remove duplicates and empty
+        
+        for phone_variant in phone_variants:
+            search_payload = {
+                'filterGroups': [{
+                    'filters': [{
+                        'propertyName': 'phone',
+                        'operator': 'EQ',
+                        'value': phone_variant
+                    }]
+                }],
+                'properties': ['domain', 'name', 'phone'],
+                'limit': 1
+            }
+            
+            success, search_data = make_hubspot_request('POST', search_url, headers, json_data=search_payload)
+            
+            if success:
+                results = search_data.get('results', [])
+                if results:
+                    return results[0]['id']
+        
+        return None
+    
+    def _update_company_properties(self, company_id: str, original_company: Dict[str, Any]) -> bool:
+        """Update existing company with comprehensive properties"""
+        print(f"    🔧 Updating company properties for {company_id}...")
+        
+        headers = get_api_headers(self.sandbox_token)
+        url = f'https://api.hubapi.com/crm/v3/objects/companies/{company_id}'
+        
+        # Get comprehensive company properties like we do for contacts
+        company_props = original_company.get('properties', {})
+        
+        # Filter and prepare properties for update
+        safe_props = self._get_safe_company_properties(company_props)
+        
+        if not safe_props:
+            print(f"    ℹ️  No properties to update")
+            return True
+        
+        payload = {'properties': safe_props}
+        
+        success, data = make_hubspot_request('PATCH', url, headers, json_data=payload)
+        
+        if success:
+            print(f"    ✅ Updated {len(safe_props)} company properties")
+            return True
+        else:
+            print(f"    ❌ Failed to update company properties: {data}")
+            return False
+    
+    def _get_safe_company_properties(self, company_props: Dict[str, Any]) -> Dict[str, Any]:
+        """Get comprehensive list of safe company properties to migrate"""
+        
+        # Comprehensive list of commonly safe company properties
+        safe_fields = [
+            'name', 'domain', 'city', 'state', 'country', 'industry', 'phone', 'website',
+            'description', 'founded_year', 'is_public', 'timezone', 'type', 'zip',
+            'address', 'address2', 'annualrevenue', 'numberofemployees', 'owneremail',
+            'facebookcompanypage', 'linkedincompanypage', 'twitterhandle', 
+            'googleplus_page', 'about_us', 'facebook_company_page'
+        ]
+        
+        safe_props = {}
+        for field in safe_fields:
+            if field in company_props and company_props[field]:
+                safe_props[field] = company_props[field]
+        
+        return safe_props
+    
+    def _verify_and_fix_company_properties(self, sandbox_company_id: str, original_company: Dict[str, Any]) -> bool:
+        """Verify all company properties were transferred correctly and fix missing ones"""
+        print(f"    🔍 Verifying properties for company {sandbox_company_id}...")
+        
+        headers = get_api_headers(self.sandbox_token)
+        sandbox_url = f'https://api.hubapi.com/crm/v3/objects/companies/{sandbox_company_id}'
+        
+        # Get comprehensive properties for comparison
+        original_props = original_company.get('properties', {})
+        safe_props_dict = self._get_safe_company_properties(original_props)
+        safe_props_list = list(safe_props_dict.keys())
+        
+        if not safe_props_list:
+            print(f"    ℹ️  No properties to verify")
+            return True
+        
+        print(f"    🔍 Checking {len(safe_props_list)} properties: {', '.join(safe_props_list[:5])}{'...' if len(safe_props_list) > 5 else ''}")
+        
+        params = {
+            'properties': ','.join(safe_props_list)
+        }
+        
+        success, sandbox_data = make_hubspot_request('GET', sandbox_url, headers, params=params)
+        
+        if not success:
+            print(f"    ❌ Could not fetch sandbox company data for verification")
+            return False
+        
+        # Compare properties
+        sandbox_props = sandbox_data.get('properties', {})
+        
+        missing_props = {}
+        different_props = {}
+        
+        for prop_name, prop_value in original_props.items():
+            if prop_name in safe_props_list and prop_value:  # Only check non-empty values
+                sandbox_value = sandbox_props.get(prop_name)
+                
+                if not sandbox_value:
+                    missing_props[prop_name] = prop_value
+                elif str(sandbox_value).strip() != str(prop_value).strip():
+                    different_props[prop_name] = {
+                        'original': prop_value,
+                        'sandbox': sandbox_value
+                    }
+        
+        # Report findings
+        if missing_props or different_props:
+            print(f"    ⚠️  Property verification issues found:")
+            
+            if missing_props:
+                print(f"      📋 Missing properties: {len(missing_props)}")
+                for prop, value in list(missing_props.items())[:3]:  # Show first 3
+                    print(f"        • {prop}: {str(value)[:50]}")
+                if len(missing_props) > 3:
+                    print(f"        ... and {len(missing_props)-3} more")
+            
+            if different_props:
+                print(f"      🔄 Different values: {len(different_props)}")
+                for prop, values in list(different_props.items())[:2]:  # Show first 2
+                    print(f"        • {prop}: '{values['original']}' vs '{values['sandbox']}'")
+        
+        # Fix missing properties
+        if missing_props:
+            print(f"    🔧 Fixing {len(missing_props)} missing company properties...")
+            
+            update_payload = {'properties': missing_props}
+            update_success, update_result = make_hubspot_request('PATCH', sandbox_url, headers, json_data=update_payload)
+            
+            if update_success:
+                print(f"    ✅ Successfully updated {len(missing_props)} properties")
+                return True
+            else:
+                print(f"    ❌ Failed to update properties: {update_result}")
+                return False
+        else:
+            print(f"    ✅ All company properties verified successfully")
+            return True
     
     def _create_selective_associations(self, contact_ids: List[str], deal_ids: List[str], company_ids: List[str], deal_id_mapping: Dict[str, str] = None) -> int:
         """Create associations between migrated objects using proper association API"""
