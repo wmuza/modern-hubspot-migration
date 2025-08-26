@@ -84,17 +84,69 @@ def parse_arguments():
     
     # Selective Sync Options
     parser.add_argument('--selective-contacts', action='store_true',
-                       help='Sync specific contacts and their related deals')
+                       help='Sync specific contacts and their related objects')
     parser.add_argument('--selective-deals', action='store_true',
-                       help='Sync specific deals and their related contacts')
+                       help='Sync specific deals and their related objects')
+    parser.add_argument('--selective-tickets', action='store_true',
+                       help='Sync specific tickets and their related objects')
+    parser.add_argument('--selective-custom-objects', action='store_true',
+                       help='Sync specific custom objects and their related objects')
+    
+    # ID-based selective sync for all object types
     parser.add_argument('--contact-ids', type=str,
                        help='Comma-separated list of contact IDs for selective sync')
     parser.add_argument('--deal-ids', type=str,
                        help='Comma-separated list of deal IDs for selective sync')
+    parser.add_argument('--ticket-ids', type=str,
+                       help='Comma-separated list of ticket IDs for selective sync')
+    parser.add_argument('--custom-object-ids', type=str,
+                       help='Comma-separated list of custom object IDs for selective sync')
+    parser.add_argument('--custom-object-type', type=str,
+                       help='Custom object type name for selective sync (e.g. "projects", "assets")')
+    
+    # Date-based filtering (works with all object types)
     parser.add_argument('--days-since-created', type=int,
-                       help='Sync objects created within last N days')
+                       help='Sync objects created within last N days (works with all object types)')
+    parser.add_argument('--days-since-modified', type=int,
+                       help='Sync objects modified within last N days (works with all object types)')
+    
+    # Contact-specific filtering options
     parser.add_argument('--email-domains', type=str,
                        help='Comma-separated list of email domains for contact filtering')
+    parser.add_argument('--lifecycle-stages', type=str,
+                       help='Comma-separated list of lifecycle stages for contact filtering')
+    
+    # Company-specific filtering options
+    parser.add_argument('--company-domains', type=str,
+                       help='Comma-separated list of company domains for filtering')
+    parser.add_argument('--industries', type=str,
+                       help='Comma-separated list of industries for company filtering')
+    
+    # Deal-specific filtering options
+    parser.add_argument('--deal-stages', type=str,
+                       help='Comma-separated list of deal stages for filtering')
+    parser.add_argument('--deal-pipelines', type=str,
+                       help='Comma-separated list of deal pipeline IDs for filtering')
+    parser.add_argument('--min-deal-amount', type=float,
+                       help='Minimum deal amount for filtering')
+    parser.add_argument('--max-deal-amount', type=float,
+                       help='Maximum deal amount for filtering')
+    
+    # Ticket-specific filtering options  
+    parser.add_argument('--ticket-priorities', type=str,
+                       help='Comma-separated list of ticket priorities for filtering')
+    parser.add_argument('--ticket-statuses', type=str,
+                       help='Comma-separated list of ticket statuses for filtering')
+    parser.add_argument('--ticket-categories', type=str,
+                       help='Comma-separated list of ticket categories for filtering')
+    
+    # General property-based filtering
+    parser.add_argument('--property-filters', type=str,
+                       help='JSON string of property filters e.g. \'{"property":"value","property2":"value2"}\'')
+    
+    # Owner-based filtering (works across all object types)
+    parser.add_argument('--owner-ids', type=str,
+                       help='Comma-separated list of owner IDs for filtering (works with all object types)')
     
     # Rollback Options
     parser.add_argument('--rollback-last', action='store_true',
@@ -212,44 +264,114 @@ def handle_rollback_operations(config, args, logger):
     return False
 
 def handle_selective_sync(config, args, logger):
-    """Handle selective sync operations"""
+    """Handle selective sync operations for all object types"""
     hubspot_config = config.get_hubspot_config()
+    migration_config = config.get_migration_config()
     sync_manager = SelectiveSyncManager(
         hubspot_config['production_token'],
         hubspot_config['sandbox_token']
     )
     
-    # Build criteria based on arguments
+    # Build comprehensive criteria based on arguments
     criteria = {}
     
+    # ID-based filtering for all object types
     if args.contact_ids:
         criteria['contact_ids'] = [id.strip() for id in args.contact_ids.split(',')]
-    
     if args.deal_ids:
         criteria['deal_ids'] = [id.strip() for id in args.deal_ids.split(',')]
+    if args.ticket_ids:
+        criteria['ticket_ids'] = [id.strip() for id in args.ticket_ids.split(',')]
+    if args.custom_object_ids:
+        criteria['custom_object_ids'] = [id.strip() for id in args.custom_object_ids.split(',')]
+    if args.custom_object_type:
+        criteria['custom_object_type'] = args.custom_object_type.strip()
     
+    # Date-based filtering (works with all object types)
     if args.days_since_created:
         criteria['days_since_created'] = args.days_since_created
+    if args.days_since_modified:
+        criteria['days_since_modified'] = args.days_since_modified
     
+    # Contact-specific filtering
     if args.email_domains:
         criteria['email_domains'] = [domain.strip() for domain in args.email_domains.split(',')]
+    if args.lifecycle_stages:
+        criteria['lifecycle_stages'] = [stage.strip() for stage in args.lifecycle_stages.split(',')]
+    
+    # Company-specific filtering  
+    if args.company_domains:
+        criteria['company_domains'] = [domain.strip() for domain in args.company_domains.split(',')]
+    if args.industries:
+        criteria['industries'] = [industry.strip() for industry in args.industries.split(',')]
+    
+    # Deal-specific filtering
+    if args.deal_stages:
+        criteria['deal_stages'] = [stage.strip() for stage in args.deal_stages.split(',')]
+    if args.deal_pipelines:
+        criteria['deal_pipelines'] = [pipeline.strip() for pipeline in args.deal_pipelines.split(',')]
+    if args.min_deal_amount:
+        criteria['min_deal_amount'] = args.min_deal_amount
+    if args.max_deal_amount:
+        criteria['max_deal_amount'] = args.max_deal_amount
+    
+    # Ticket-specific filtering
+    if args.ticket_priorities:
+        criteria['ticket_priorities'] = [priority.strip() for priority in args.ticket_priorities.split(',')]
+    if args.ticket_statuses:
+        criteria['ticket_statuses'] = [status.strip() for status in args.ticket_statuses.split(',')]
+    if args.ticket_categories:
+        criteria['ticket_categories'] = [category.strip() for category in args.ticket_categories.split(',')]
+    
+    # General filtering options
+    if args.owner_ids:
+        criteria['owner_ids'] = [id.strip() for id in args.owner_ids.split(',')]
+    if args.property_filters:
+        import json
+        try:
+            criteria['property_filters'] = json.loads(args.property_filters)
+        except json.JSONDecodeError:
+            logger.error("❌ Invalid JSON format for --property-filters")
+            return False
     
     # Set a reasonable limit if not specified and no specific criteria provided
-    if 'limit' not in criteria and not criteria.get('contact_ids') and not criteria.get('deal_ids') and not criteria.get('email_domains'):
-        criteria['limit'] = args.limit if args.limit else migration_config['contact_limit']  # Use command line limit or config default
+    has_specific_criteria = any([
+        args.contact_ids, args.deal_ids, args.ticket_ids, args.custom_object_ids,
+        args.email_domains, args.company_domains, args.deal_stages, args.ticket_priorities
+    ])
+    if not has_specific_criteria:
+        criteria['limit'] = args.limit if args.limit else migration_config['contact_limit']
     
+    # Handle different selective sync types
     if args.selective_contacts:
-        print("🎯 SELECTIVE SYNC: CONTACTS → DEALS")
+        print("🎯 SELECTIVE SYNC: CONTACTS → ALL RELATED OBJECTS")
         print("=" * 60)
-        results = sync_manager.selective_sync_contacts_with_deals(criteria)
+        results = sync_manager.selective_sync_contacts_with_related(criteria)
         report_file = sync_manager.save_selective_sync_report(results)
         print(f"📄 Selective sync report saved: {report_file}")
         return True
     
     if args.selective_deals:
-        print("🎯 SELECTIVE SYNC: DEALS → CONTACTS")
+        print("🎯 SELECTIVE SYNC: DEALS → ALL RELATED OBJECTS")
         print("=" * 60)
-        results = sync_manager.selective_sync_deals_with_contacts(criteria)
+        results = sync_manager.selective_sync_deals_with_related(criteria)
+        report_file = sync_manager.save_selective_sync_report(results)
+        print(f"📄 Selective sync report saved: {report_file}")
+        return True
+    
+    if args.selective_tickets:
+        print("🎯 SELECTIVE SYNC: TICKETS → ALL RELATED OBJECTS")
+        print("=" * 60)
+        results = sync_manager.selective_sync_tickets_with_related(criteria)
+        report_file = sync_manager.save_selective_sync_report(results)
+        print(f"📄 Selective sync report saved: {report_file}")
+        return True
+    
+    if args.selective_custom_objects:
+        object_type = criteria.get('custom_object_type', 'custom_objects')
+        print(f"🎯 SELECTIVE SYNC: {object_type.upper()} → ALL RELATED OBJECTS")
+        print("=" * 60)
+        results = sync_manager.selective_sync_custom_objects_with_related(criteria)
         report_file = sync_manager.save_selective_sync_report(results)
         print(f"📄 Selective sync report saved: {report_file}")
         return True
@@ -448,7 +570,7 @@ def main():
             sys.exit(0 if success else 1)
         
         # Handle selective sync operations
-        if args.selective_contacts or args.selective_deals:
+        if args.selective_contacts or args.selective_deals or args.selective_tickets or args.selective_custom_objects:
             success = handle_selective_sync(config, args, logger)
             sys.exit(0 if success else 1)
         

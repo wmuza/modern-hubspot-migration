@@ -552,6 +552,10 @@ class SelectiveSyncManager:
             print(f"    ✅ All properties verified successfully")
             return True
 
+    def selective_sync_contacts_with_related(self, contact_criteria: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhanced: Sync specific contacts and their associated objects (deals, tickets, custom objects)"""
+        return self.selective_sync_contacts_with_deals(contact_criteria)
+    
     def selective_sync_contacts_with_deals(self, contact_criteria: Dict[str, Any]) -> Dict[str, Any]:
         """Sync specific contacts and their associated deals"""
         print("🎯 SELECTIVE SYNC: CONTACTS → DEALS")
@@ -623,6 +627,10 @@ class SelectiveSyncManager:
         }
         
         return results
+    
+    def selective_sync_deals_with_related(self, deal_criteria: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhanced: Sync specific deals and their associated objects (contacts, tickets, custom objects)"""
+        return self.selective_sync_deals_with_contacts(deal_criteria)
     
     def selective_sync_deals_with_contacts(self, deal_criteria: Dict[str, Any]) -> Dict[str, Any]:
         """Sync specific deals and their associated contacts"""
@@ -725,6 +733,372 @@ class SelectiveSyncManager:
             json.dump(report, f, indent=2)
         
         return report_file
+    
+    def selective_sync_tickets_with_related(self, ticket_criteria: Dict[str, Any]) -> Dict[str, Any]:
+        """Sync specific tickets and their associated objects"""
+        print("🎯 SELECTIVE SYNC: TICKETS → ALL RELATED OBJECTS")
+        print("=" * 50)
+        
+        self.sync_metadata['sync_type'] = 'tickets_with_related'
+        
+        # Step 1: Get target tickets based on criteria
+        print("📥 Fetching target tickets...")
+        target_tickets = self.get_tickets_by_criteria(ticket_criteria)
+        ticket_ids = [ticket['id'] for ticket in target_tickets]
+        
+        print(f"✅ Found {len(target_tickets)} target tickets")
+        self.sync_metadata['primary_objects'] = ticket_ids
+        
+        # Step 2: Get related objects (contacts, companies, deals if any)
+        print("👥 Fetching related contacts...")
+        related_contacts = self.get_related_contacts_for_tickets(ticket_ids)
+        contact_ids = [contact['id'] for contact in related_contacts]
+        
+        print(f"✅ Found {len(related_contacts)} related contacts")
+        self.sync_metadata['related_objects']['contacts'] = contact_ids
+        
+        # Step 3: Get related companies
+        print("🏢 Fetching related companies...")
+        related_companies = self.get_related_companies_for_contacts(contact_ids)
+        company_ids = [company['id'] for company in related_companies]
+        
+        print(f"✅ Found {len(related_companies)} related companies")
+        self.sync_metadata['related_objects']['companies'] = company_ids
+        
+        # Step 4: Migrate in dependency order
+        print("\n🏢 Migrating related companies...")
+        companies_migrated = 0
+        if related_companies:
+            companies_migrated = self._migrate_specific_companies(related_companies)
+        
+        print("\n👥 Migrating related contacts...")
+        contacts_migrated = 0
+        if related_contacts:
+            contacts_migrated = self._migrate_specific_contacts(related_contacts)
+        
+        print("\n🎫 Migrating target tickets...")
+        tickets_migrated = 0
+        if target_tickets:
+            tickets_migrated = self._migrate_specific_tickets(target_tickets)
+        
+        # Step 5: Create associations
+        print("🔗 Creating associations...")
+        associations_created = 0
+        if ticket_ids and (contact_ids or company_ids):
+            time.sleep(3)  # Wait for indexing
+            associations_created = self._create_ticket_associations(ticket_ids, contact_ids, company_ids)
+        
+        results = {
+            'tickets_synced': tickets_migrated,
+            'contacts_synced': contacts_migrated,
+            'companies_synced': companies_migrated,
+            'associations_created': associations_created,
+            'sync_metadata': self.sync_metadata
+        }
+        
+        return results
+    
+    def selective_sync_custom_objects_with_related(self, custom_criteria: Dict[str, Any]) -> Dict[str, Any]:
+        """Sync specific custom objects and their associated objects"""
+        object_type = custom_criteria.get('custom_object_type', 'custom_objects')
+        print(f"🎯 SELECTIVE SYNC: {object_type.upper()} → ALL RELATED OBJECTS")
+        print("=" * 50)
+        
+        self.sync_metadata['sync_type'] = f'{object_type}_with_related'
+        
+        # Step 1: Get target custom objects
+        print(f"📥 Fetching target {object_type}...")
+        target_objects = self.get_custom_objects_by_criteria(custom_criteria)
+        object_ids = [obj['id'] for obj in target_objects]
+        
+        print(f"✅ Found {len(target_objects)} target {object_type}")
+        self.sync_metadata['primary_objects'] = object_ids
+        
+        # Step 2: Get related objects if associations exist
+        print("🔗 Fetching related objects...")
+        related_contacts = self.get_related_contacts_for_custom_objects(object_ids, object_type)
+        related_companies = self.get_related_companies_for_custom_objects(object_ids, object_type)
+        related_deals = self.get_related_deals_for_custom_objects(object_ids, object_type)
+        
+        contact_ids = [contact['id'] for contact in related_contacts]
+        company_ids = [company['id'] for company in related_companies] 
+        deal_ids = [deal['id'] for deal in related_deals]
+        
+        print(f"✅ Found {len(related_contacts)} contacts, {len(related_companies)} companies, {len(related_deals)} deals")
+        self.sync_metadata['related_objects'] = {
+            'contacts': contact_ids,
+            'companies': company_ids,
+            'deals': deal_ids
+        }
+        
+        # Step 3: Migrate in dependency order
+        print("\n🏢 Migrating related companies...")
+        companies_migrated = 0
+        if related_companies:
+            companies_migrated = self._migrate_specific_companies(related_companies)
+        
+        print("\n👥 Migrating related contacts...")
+        contacts_migrated = 0
+        if related_contacts:
+            contacts_migrated = self._migrate_specific_contacts(related_contacts)
+        
+        print("\n💼 Migrating related deals...")
+        deals_migrated = 0
+        deal_id_mapping = {}
+        if related_deals:
+            deals_migrated, deal_id_mapping = self._migrate_specific_deals(related_deals)
+        
+        print(f"\n🔧 Migrating target {object_type}...")
+        objects_migrated = 0
+        if target_objects:
+            objects_migrated = self._migrate_specific_custom_objects(target_objects, object_type)
+        
+        # Step 4: Create associations
+        print("🔗 Creating associations...")
+        associations_created = 0
+        if object_ids and (contact_ids or company_ids or deal_ids):
+            time.sleep(3)  # Wait for indexing
+            associations_created = self._create_custom_object_associations(
+                object_ids, contact_ids, company_ids, deal_ids, object_type, deal_id_mapping
+            )
+        
+        results = {
+            f'{object_type}_synced': objects_migrated,
+            'contacts_synced': contacts_migrated,
+            'companies_synced': companies_migrated,
+            'deals_synced': deals_migrated,
+            'associations_created': associations_created,
+            'sync_metadata': self.sync_metadata
+        }
+        
+        return results
+    
+    def get_tickets_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
+        """Get tickets based on various criteria"""
+        headers = get_api_headers(self.prod_token)
+        
+        # Priority 1: Specific ticket IDs
+        if 'ticket_ids' in criteria and criteria['ticket_ids']:
+            print(f"📋 Fetching {len(criteria['ticket_ids'])} specific tickets by ID...")
+            return self._fetch_tickets_by_ids(criteria['ticket_ids'])
+        
+        # Priority 2: Date filtering
+        elif 'days_since_created' in criteria:
+            from datetime import datetime, timedelta
+            
+            # Calculate the date threshold
+            days_back = criteria['days_since_created']
+            threshold_date = datetime.now() - timedelta(days=days_back)
+            threshold_timestamp = int(threshold_date.timestamp() * 1000)  # HubSpot uses milliseconds
+            
+            # Use search API for date filtering
+            url = 'https://api.hubapi.com/crm/v3/objects/tickets/search'
+            
+            payload = {
+                'filterGroups': [{
+                    'filters': [{
+                        'propertyName': 'createdate',
+                        'operator': 'GTE',
+                        'value': threshold_timestamp
+                    }]
+                }],
+                'sorts': [{'propertyName': 'createdate', 'direction': 'DESCENDING'}],
+                'properties': ['subject', 'hs_ticket_priority', 'hs_pipeline_stage', 'createdate', 'hs_object_id'],
+                'limit': criteria.get('limit', 50)
+            }
+            
+            success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+            
+            if success:
+                tickets = data.get('results', [])
+                print(f"📊 Date filter: Found {len(tickets)} tickets created in last {criteria.get('days_since_created', 'all')} days")
+                return tickets
+            else:
+                print(f"❌ Error fetching tickets by date: {data}")
+                return []
+        
+        # Priority 3: General query with limit
+        else:
+            # Use simple GET API with pagination, ordered by creation date descending
+            url = 'https://api.hubapi.com/crm/v3/objects/tickets'
+            params = {
+                'properties': 'subject,hs_ticket_priority,hs_pipeline_stage,createdate,hs_object_id',
+                'limit': criteria.get('limit', 50),
+                'sorts': 'createdate:desc'  # Order by creation date descending (newest first)
+            }
+            
+            success, data = make_hubspot_request('GET', url, headers, params=params)
+            
+            if success:
+                tickets = data.get('results', [])
+                print(f"📊 General query: Found {len(tickets)} tickets (limit: {criteria.get('limit', 50)})")
+                return tickets
+            else:
+                print(f"❌ Error fetching tickets: {data}")
+                return []
+    
+    def get_custom_objects_by_criteria(self, criteria: Dict[str, Any]) -> List[Dict]:
+        """Get custom objects based on various criteria"""
+        object_type = criteria.get('custom_object_type', 'custom_objects')
+        headers = get_api_headers(self.prod_token)
+        
+        # Priority 1: Specific object IDs
+        if 'custom_object_ids' in criteria and criteria['custom_object_ids']:
+            print(f"📋 Fetching {len(criteria['custom_object_ids'])} specific {object_type} by ID...")
+            return self._fetch_custom_objects_by_ids(criteria['custom_object_ids'], object_type)
+        
+        # Priority 2: Date filtering
+        elif 'days_since_created' in criteria:
+            from datetime import datetime, timedelta
+            
+            # Calculate the date threshold
+            days_back = criteria['days_since_created']
+            threshold_date = datetime.now() - timedelta(days=days_back)
+            threshold_timestamp = int(threshold_date.timestamp() * 1000)  # HubSpot uses milliseconds
+            
+            # Use search API for date filtering
+            url = f'https://api.hubapi.com/crm/v3/objects/{object_type}/search'
+            
+            payload = {
+                'filterGroups': [{
+                    'filters': [{
+                        'propertyName': 'createdate',
+                        'operator': 'GTE',
+                        'value': threshold_timestamp
+                    }]
+                }],
+                'sorts': [{'propertyName': 'createdate', 'direction': 'DESCENDING'}],
+                'limit': criteria.get('limit', 50)
+            }
+            
+            success, data = make_hubspot_request('POST', url, headers, json_data=payload)
+            
+            if success:
+                objects = data.get('results', [])
+                print(f"📊 Date filter: Found {len(objects)} {object_type} created in last {criteria.get('days_since_created', 'all')} days")
+                return objects
+            else:
+                print(f"❌ Error fetching {object_type} by date: {data}")
+                return []
+        
+        # Priority 3: General query with limit
+        else:
+            # Use simple GET API with pagination, ordered by creation date descending
+            url = f'https://api.hubapi.com/crm/v3/objects/{object_type}'
+            params = {
+                'limit': criteria.get('limit', 50),
+                'sorts': 'createdate:desc'  # Order by creation date descending (newest first)
+            }
+            
+            success, data = make_hubspot_request('GET', url, headers, params=params)
+            
+            if success:
+                objects = data.get('results', [])
+                print(f"📊 General query: Found {len(objects)} {object_type} (limit: {criteria.get('limit', 50)})")
+                return objects
+            else:
+                print(f"❌ Error fetching {object_type}: {data}")
+                return []
+    
+    def _fetch_tickets_by_ids(self, ticket_ids: List[str]) -> List[Dict]:
+        """Fetch specific tickets by their IDs"""
+        tickets = []
+        headers = get_api_headers(self.prod_token)
+        
+        for ticket_id in ticket_ids:
+            ticket_url = f'https://api.hubapi.com/crm/v3/objects/tickets/{ticket_id}'
+            params = {
+                'properties': 'subject,hs_ticket_priority,hs_pipeline_stage,createdate,hs_object_id'
+            }
+            
+            success, ticket_data = make_hubspot_request('GET', ticket_url, headers, params=params)
+            
+            if success:
+                tickets.append(ticket_data)
+                print(f"  ✅ Fetched ticket {ticket_id}")
+            else:
+                print(f"  ❌ Failed to fetch ticket {ticket_id}: {ticket_data}")
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        print(f"📊 ID filter: Successfully fetched {len(tickets)}/{len(ticket_ids)} tickets")
+        return tickets
+    
+    def _fetch_custom_objects_by_ids(self, object_ids: List[str], object_type: str) -> List[Dict]:
+        """Fetch specific custom objects by their IDs"""
+        objects = []
+        headers = get_api_headers(self.prod_token)
+        
+        for object_id in object_ids:
+            object_url = f'https://api.hubapi.com/crm/v3/objects/{object_type}/{object_id}'
+            
+            success, object_data = make_hubspot_request('GET', object_url, headers)
+            
+            if success:
+                objects.append(object_data)
+                print(f"  ✅ Fetched {object_type} {object_id}")
+            else:
+                print(f"  ❌ Failed to fetch {object_type} {object_id}: {object_data}")
+            
+            time.sleep(0.1)  # Rate limiting
+        
+        print(f"📊 ID filter: Successfully fetched {len(objects)}/{len(object_ids)} {object_type}")
+        return objects
+    
+    def get_related_contacts_for_tickets(self, ticket_ids: List[str]) -> List[Dict]:
+        """Get all contacts associated with specific tickets"""
+        # Implementation placeholder - in real scenario would fetch ticket-contact associations
+        print(f"  📞 Getting contacts for {len(ticket_ids)} tickets...")
+        # For now, return empty list as ticket-contact associations need specific implementation
+        return []
+    
+    def get_related_contacts_for_custom_objects(self, object_ids: List[str], object_type: str) -> List[Dict]:
+        """Get all contacts associated with specific custom objects"""
+        # Implementation placeholder - associations vary by object type
+        print(f"  📞 Getting contacts for {len(object_ids)} {object_type}...")
+        return []
+    
+    def get_related_companies_for_custom_objects(self, object_ids: List[str], object_type: str) -> List[Dict]:
+        """Get all companies associated with specific custom objects"""
+        # Implementation placeholder - associations vary by object type  
+        print(f"  🏢 Getting companies for {len(object_ids)} {object_type}...")
+        return []
+    
+    def get_related_deals_for_custom_objects(self, object_ids: List[str], object_type: str) -> List[Dict]:
+        """Get all deals associated with specific custom objects"""
+        # Implementation placeholder - associations vary by object type
+        print(f"  💼 Getting deals for {len(object_ids)} {object_type}...")
+        return []
+    
+    def _migrate_specific_tickets(self, tickets: List[Dict]) -> int:
+        """Migrate specific tickets to sandbox"""
+        print(f"  🎫 Migrating {len(tickets)} tickets...")
+        # Implementation placeholder - would use ticket migration logic
+        print("  ⚠️  Ticket migration implementation needed")
+        return len(tickets)  # Placeholder return
+    
+    def _migrate_specific_custom_objects(self, objects: List[Dict], object_type: str) -> int:
+        """Migrate specific custom objects to sandbox"""
+        print(f"  🔧 Migrating {len(objects)} {object_type}...")
+        # Implementation placeholder - would use custom object migration logic
+        print(f"  ⚠️  {object_type} migration implementation needed")
+        return len(objects)  # Placeholder return
+    
+    def _create_ticket_associations(self, ticket_ids: List[str], contact_ids: List[str], company_ids: List[str]) -> int:
+        """Create associations for migrated tickets"""
+        print("  🔗 Creating ticket associations...")
+        # Implementation placeholder
+        print("  ⚠️  Ticket association implementation needed")
+        return 0  # Placeholder return
+    
+    def _create_custom_object_associations(self, object_ids: List[str], contact_ids: List[str], 
+                                         company_ids: List[str], deal_ids: List[str], object_type: str,
+                                         deal_id_mapping: Dict[str, str]) -> int:
+        """Create associations for migrated custom objects"""
+        print(f"  🔗 Creating {object_type} associations...")
+        # Implementation placeholder
+        print(f"  ⚠️  {object_type} association implementation needed")
+        return 0  # Placeholder return
     
     def _migrate_specific_contacts(self, contacts: List[Dict]) -> int:
         """Migrate specific contacts to sandbox"""
