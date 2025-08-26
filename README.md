@@ -149,7 +149,7 @@ production_token = pat-na1-YOUR-SOURCE-TOKEN-HERE
 sandbox_token = pat-na1-YOUR-DESTINATION-TOKEN-HERE
 
 [migration]
-contact_limit = 50
+contact_limit = 0        # 0 = migrate all records, or specify a number to limit
 ```
 
 **Important:** Replace the example tokens with your real tokens from Step 4.
@@ -249,7 +249,7 @@ The tool will show you progress like this:
 ================================================================================
 
 🔧 MIGRATION CONFIGURATION
-📊 Contact limit: 50
+📊 Contact limit: 0 (all records)
 ⏱️  Rate limit: 0.3s
 
 🏢 STEP 1: COMPANY PROPERTY MIGRATION
@@ -257,7 +257,7 @@ The tool will show you progress like this:
 
 👥 STEP 2: CONTACT MIGRATION  
 Migrating contacts |████████████████████| 50/50 (100.0%)
-✅ 50 contacts migrated successfully
+✅ All contacts migrated successfully
 
 🔗 STEP 3: ASSOCIATION MIGRATION
 Migrating associations |████████████████████| 50/50 (100.0%)
@@ -291,7 +291,7 @@ A: Yes! Use `--rollback-last` to undo the most recent migration, or `--show-roll
 A: Yes! Use selective sync: `--selective-contacts --days-since-created 7` for recent contacts, or `--contact-ids "123,456"` for specific IDs.
 
 **Q: How long does it take?**
-A: For 50 contacts: about 2-3 minutes. For 1000 contacts: about 30-45 minutes.
+A: For typical portals with few hundred records: about 5-10 minutes. For large portals with thousands of records: about 30-60 minutes.
 
 **Q: What if something goes wrong?**
 A: Use `--rollback-last` to undo changes. All operations are logged in JSON reports in the `reports` folder.

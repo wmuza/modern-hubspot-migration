@@ -125,8 +125,8 @@ python migrate.py --limit 5
 
 ## What Next?
 
-- **Migrate more contacts:** `python migrate.py --limit 50`
-- **Migrate everything:** `python migrate.py`
+- **Migrate everything:** `python migrate.py` (default: all records)
+- **Migrate limited records:** `python migrate.py --limit 50`
 - **Need help?** Check the logs in the `logs` folder
 
 ## Troubleshooting

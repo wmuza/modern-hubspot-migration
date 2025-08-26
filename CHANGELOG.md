@@ -2,6 +2,22 @@
 
 All notable changes to the HubSpot Modern Migration Tool will be documented in this file.
 
+## [2.0.2] - 2025-08-26
+
+### Changed
+- 🚀 **Default Behavior**: Changed default `contact_limit` from 50 to 0 (unlimited) to migrate all records by default
+- 🔧 **Token Validation**: Fixed HubSpot Private App token validation to properly support `pat-na1-` format tokens
+- 📚 **Documentation**: Updated README.md, USAGE.md, and QUICK_START.md to reflect new defaults
+
+### Fixed
+- ❌ **Configuration Override**: Fixed hardcoded 50-record limit that ignored config file settings
+- 🔐 **Token Format**: Corrected token validation logic to accept proper HubSpot Private App token structure
+
+### Impact
+- Users can now migrate all their data by default without specifying limits
+- Proper token validation prevents false authentication errors
+- Consistent behavior between config file settings and actual migration limits
+
 ## [2.0.1] - 2025-08-25
 
 ### Fixed

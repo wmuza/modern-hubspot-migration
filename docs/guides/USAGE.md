@@ -154,7 +154,7 @@ production_token = pat-na1-your-production-token
 sandbox_token = pat-na1-your-destination-token
 
 [migration]
-contact_limit = 50        # Number of contacts (0 = all)
+contact_limit = 0         # Number of contacts (0 = all, or specify number to limit)
 batch_size = 10          # Processing batch size
 rate_limit_delay = 0.3   # Delay between requests
 max_retries = 3          # Retry attempts
