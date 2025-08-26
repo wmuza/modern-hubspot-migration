@@ -96,7 +96,7 @@ class SecureConfig:
             logging.info(f"{token_name} validation: {validation_message}")
         
         # Validate migration settings
-        migration_limit = self.config.getint('migration', 'contact_limit', fallback=50)
+        migration_limit = self.config.getint('migration', 'contact_limit', fallback=0)
         if migration_limit > 10000:
             logging.warning(f"Very high contact limit ({migration_limit}). Consider using smaller batches.")
         
@@ -115,7 +115,7 @@ class SecureConfig:
     def get_migration_config(self) -> Dict[str, Any]:
         """Get migration settings"""
         return {
-            'contact_limit': self.config.getint('migration', 'contact_limit', fallback=50),
+            'contact_limit': self.config.getint('migration', 'contact_limit', fallback=0),
             'batch_size': self.config.getint('migration', 'batch_size', fallback=10),
             'rate_limit_delay': self.config.getfloat('migration', 'rate_limit_delay', fallback=0.3),
             'max_retries': self.config.getint('migration', 'max_retries', fallback=3),

@@ -224,7 +224,7 @@ def handle_selective_sync(config, args, logger):
     
     # Set a reasonable limit if not specified and no specific criteria provided
     if 'limit' not in criteria and not criteria.get('contact_ids') and not criteria.get('deal_ids') and not criteria.get('email_domains'):
-        criteria['limit'] = args.limit if args.limit else 50  # Use command line limit or default
+        criteria['limit'] = args.limit if args.limit else migration_config['contact_limit']  # Use command line limit or config default
     
     if args.selective_contacts:
         print("🎯 SELECTIVE SYNC: CONTACTS → DEALS")

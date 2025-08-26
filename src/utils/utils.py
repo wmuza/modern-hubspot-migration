@@ -314,12 +314,13 @@ def validate_hubspot_token(token: str) -> Tuple[bool, str]:
     if len(token) < 20:
         return False, "Token appears too short to be valid"
     
-    # Check for HubSpot Private App token format
-    if not token.startswith('pat-'):
-        return False, "Token should start with 'pat-' for HubSpot Private App tokens"
+    # Check for HubSpot Private App token format (pat-na1-xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+    if not token.startswith('pat-na1-'):
+        return False, "Token should start with 'pat-na1-' for HubSpot Private App tokens"
     
-    # Check for common security issues
-    if token.count('.') < 2:
+    # Check for proper UUID-like format after the prefix
+    token_parts = token.split('-')
+    if len(token_parts) < 5:  # pat, na1, and at least 3 more parts
         return False, "Token format doesn't match expected HubSpot Private App token structure"
     
     return True, "Token format appears valid"
